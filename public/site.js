@@ -23,6 +23,7 @@ async function load() {
   if (!SITE) { $('title').textContent = 'Site not found'; return; }
 
   renderHeader();
+  renderUptime();
   renderPrivacy();
   renderVersions();
   await refreshStats();
@@ -72,6 +73,20 @@ async function refreshStats() {
     ? 'Live apps (Next.js) aren’t counted yet — stats are for static/React sites.'
     : 'Counting starts from the first deploy after analytics was added — redeploy if you see zeros.';
   renderChart(st.daily || []);
+}
+
+function renderUptime() {
+  const el = $('uptimePanel');
+  if (!el) return;
+  if (SITE.up === null || SITE.up === undefined) {
+    el.innerHTML = `<span class="subtitle" style="font-size:13px">Not checked yet — Perch pings live sites every minute.</span>`;
+    return;
+  }
+  const dot = SITE.up ? '🟢' : '🔴';
+  const word = SITE.up ? 'Up' : 'Down';
+  const pct = SITE.pct != null ? ` · ${SITE.pct}% uptime` : '';
+  const checked = SITE.lastCheckedAt ? ` · checked ${timeAgo(SITE.lastCheckedAt)}` : '';
+  el.innerHTML = `<span style="font-size:15px"><b>${dot} ${word}</b></span><span class="subtitle" style="font-size:13px">${pct}${checked}</span>`;
 }
 
 function renderChart(daily) {
@@ -163,5 +178,17 @@ $('deleteBtn').addEventListener('click', async () => {
   else { alert('Could not delete'); $('deleteBtn').disabled = false; $('deleteBtn').textContent = 'Delete site'; }
 });
 
+// Live refresh of status + uptime + stats, WITHOUT clobbering the editable panels.
+async function tick() {
+  const r = await fetch('/api/sites');
+  if (r.status === 401) { location.href = '/login.html'; return; }
+  const fresh = (await r.json()).find((s) => s.id === id);
+  if (!fresh) return;
+  SITE = fresh;
+  renderHeader();
+  renderUptime();
+  await refreshStats();
+}
+
 load();
-setInterval(refreshStats, 8000); // only stats auto-refresh (won't clobber inputs)
+setInterval(tick, 10000);

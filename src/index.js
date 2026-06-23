@@ -10,6 +10,7 @@ const store = require('./store');
 const deployer = require('./deployer');
 const caddy = require('./deployer/caddy');
 const stats = require('./stats');
+const uptime = require('./uptime');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -79,6 +80,7 @@ app.get('/api/public/status/:userId', (req, res) => {
     url: s.url,
     status: s.status,
     lastDeployAt: s.lastDeployAt,
+    ...uptime.getUptime(s.id), // up, lastCheckedAt, pct
   }));
   res.json({ sites });
 });
@@ -97,6 +99,10 @@ for (const dir of [config.dataDir, config.workspaceDir, config.sitesDir, config.
 // Load saved visit stats and flush new ones to disk periodically.
 stats.load();
 stats.startAutoFlush();
+
+// Start the uptime monitor (pings live sites every minute).
+uptime.load();
+uptime.startMonitor();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.

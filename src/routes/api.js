@@ -11,6 +11,7 @@ const deployer = require('../deployer');
 const caddy = require('../deployer/caddy');
 const porkbun = require('../domains/porkbun');
 const stats = require('../stats');
+const uptime = require('../uptime');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const { execSync } = require('child_process');
@@ -44,7 +45,7 @@ function atLimit(req) {
 // ── Sites ─────────────────────────────────────────────────────────
 
 router.get('/sites', (req, res) => {
-  res.json(store.listByUser(req.userId).map(publicSite));
+  res.json(store.listByUser(req.userId).map((s) => ({ ...publicSite(s), ...uptime.getUptime(s.id) })));
 });
 
 // Add a site from a GitHub repo.
@@ -187,6 +188,7 @@ router.delete('/sites/:id', async (req, res) => {
   fs.rmSync(path.join(config.versionsDir, site.id), { recursive: true, force: true });
   store.removeSite(site.id);
   stats.removeSite(site.id);
+  uptime.removeSite(site.id);
   await caddy.writeAndReload();
   res.json({ ok: true });
 });

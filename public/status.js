@@ -11,9 +11,14 @@ function timeAgo(ms) {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86400)} d ago`;
 }
-function pill(status) {
-  const label = { live: 'Up', building: 'Building', failed: 'Down', new: 'Not deployed' }[status] || status;
-  const cls = status === 'live' ? 'live' : status === 'failed' ? 'failed' : status === 'building' ? 'building' : '';
+function pill(site) {
+  let cls, label;
+  if (site.up === true) { cls = 'live'; label = 'Up'; }
+  else if (site.up === false) { cls = 'failed'; label = 'Down'; }
+  else { // not pinged yet — fall back to deploy status
+    label = { live: 'Up', building: 'Building', failed: 'Down', new: 'Not deployed' }[site.status] || site.status;
+    cls = site.status === 'live' ? 'live' : site.status === 'failed' ? 'failed' : site.status === 'building' ? 'building' : '';
+  }
   return `<span class="pill ${cls}"><span class="dot"></span>${label}</span>`;
 }
 
@@ -31,9 +36,9 @@ async function load() {
       <div class="info">
         <p class="name">${s.name}</p>
         <a class="domain" href="${s.url}" target="_blank" rel="noopener">${s.domain}</a>
-        <div class="meta">deployed ${timeAgo(s.lastDeployAt)}</div>
+        <div class="meta">deployed ${timeAgo(s.lastDeployAt)}${s.pct != null ? ' · ' + s.pct + '% uptime' : ''}</div>
       </div>
-      ${pill(s.status)}
+      ${pill(s)}
     </div>`).join('');
 }
 
