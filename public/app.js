@@ -15,6 +15,11 @@ const domainsBody = document.getElementById('domainsBody');
 
 let SITES = [];
 
+// Folders we never upload (huge / rebuildable). Perch installs & builds
+// for you on the server, so these aren't needed.
+const IGNORE = ['node_modules', '.git', '.vercel', '.next', '.cache'];
+function ignored(p) { return p.split('/').some((seg) => IGNORE.includes(seg)); }
+
 // ── helpers ───────────────────────────────────────────────────────
 function timeAgo(ms) {
   if (!ms) return 'never';
@@ -71,7 +76,9 @@ async function loadSites() {
 chooseFolder.addEventListener('click', () => folderInput.click());
 
 folderInput.addEventListener('change', () => {
-  const files = [...folderInput.files].map((f) => ({ file: f, path: f.webkitRelativePath || f.name }));
+  const files = [...folderInput.files]
+    .map((f) => ({ file: f, path: f.webkitRelativePath || f.name }))
+    .filter((x) => !ignored(x.path));
   doUpload(files);
 });
 
@@ -107,6 +114,7 @@ function walk(entry, prefix, out) {
     if (entry.isFile) {
       entry.file((file) => { out.push({ file, path: prefix + entry.name }); resolve(); });
     } else if (entry.isDirectory) {
+      if (IGNORE.includes(entry.name)) { resolve(); return; } // skip node_modules etc.
       const reader = entry.createReader();
       const all = [];
       const read = () => reader.readEntries(async (batch) => {
