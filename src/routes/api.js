@@ -35,8 +35,9 @@ function publicSite(s) {
   return rest;
 }
 
-// Is this user at their site limit?
+// Is this user at their site limit? (Owners have no limit.)
 function atLimit(req) {
+  if (req.isAdmin) return false;
   return store.listByUser(req.userId).length >= config.maxSitesPerUser;
 }
 

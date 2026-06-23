@@ -19,6 +19,7 @@ const logoutBtn = document.getElementById('logoutBtn');
 
 let SITES = [];
 let LIMIT = 10;
+let UNLIMITED = false;
 
 // Folders we never upload (huge / rebuildable). Perch installs & builds
 // for you on the server, so these aren't needed.
@@ -68,7 +69,7 @@ async function loadSites() {
   if (resp.status === 401) { location.href = '/login.html'; return; }
   SITES = await resp.json();
   const sc = document.getElementById('siteCount');
-  if (sc) sc.textContent = `${SITES.length} / ${LIMIT} sites`;
+  if (sc) sc.textContent = UNLIMITED ? `${SITES.length} sites · unlimited ⭐` : `${SITES.length} / ${LIMIT} sites`;
   sitesEl.innerHTML = SITES.length
     ? SITES.map(card).join('')
     : `<div class="empty">No sites yet — drag a folder up top to deploy your first one. 🚀</div>`;
@@ -267,6 +268,7 @@ async function boot() {
   const user = await me.json();
   userEmail.textContent = user.email;
   LIMIT = user.maxSites || 10;
+  UNLIMITED = !!user.unlimited;
   document.getElementById('statusLink').href = '/status.html?u=' + user.id;
   userbar.style.display = 'flex';
 

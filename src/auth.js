@@ -84,10 +84,18 @@ function setCookie(req, res, token) {
 
 // ── middleware ────────────────────────────────────────────────────
 function getUserId(req) { return verify(readToken(req)); }
+
+// Owner accounts (listed in ADMIN_EMAILS) skip limits.
+function isAdmin(user) {
+  return !!user && config.adminEmails.includes(user.email);
+}
+
 function requireAuth(req, res, next) {
-  const uid = getUserId(req);
-  if (!uid || !getUser(uid)) return res.status(401).json({ error: 'not logged in' });
-  req.userId = uid;
+  const user = getUser(getUserId(req));
+  if (!user) return res.status(401).json({ error: 'not logged in' });
+  req.userId = user.id;
+  req.user = user;
+  req.isAdmin = isAdmin(user);
   next();
 }
 
@@ -129,7 +137,7 @@ router.post('/logout', (req, res) => { res.clearCookie(COOKIE, { path: '/' }); r
 router.get('/me', (req, res) => {
   const user = getUser(getUserId(req));
   if (!user) return res.status(401).json({ error: 'not logged in' });
-  res.json({ id: user.id, email: user.email, maxSites: config.maxSitesPerUser });
+  res.json({ id: user.id, email: user.email, maxSites: config.maxSitesPerUser, unlimited: isAdmin(user) });
 });
 
 module.exports = { router, requireAuth, getUserId };

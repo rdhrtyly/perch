@@ -28,6 +28,10 @@ const config = {
   // Most sites a single account can have (stops one person filling the server).
   maxSitesPerUser: Number(process.env.MAX_SITES_PER_USER) || 10,
 
+  // Owner accounts (by email) — these skip the site limit (unlimited).
+  adminEmails: (process.env.ADMIN_EMAILS || '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+
   // Folders on disk
   dataDir: DATA_DIR,
   workspaceDir: path.join(DATA_DIR, 'workspace'), // git clones live here
