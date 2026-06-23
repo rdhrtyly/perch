@@ -64,4 +64,9 @@ function updateSite(id, patch) {
   return sites[i];
 }
 
-module.exports = { listSites, getSite, getSiteByRepo, upsertSite, updateSite };
+// Remove a site from the list.
+function removeSite(id) {
+  writeAll(readAll().filter((s) => s.id !== id));
+}
+
+module.exports = { listSites, getSite, getSiteByRepo, upsertSite, updateSite, removeSite };

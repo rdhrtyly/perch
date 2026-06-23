@@ -38,20 +38,21 @@ function pill(status) {
 function card(site) {
   const open = site.status === 'live'
     ? `<a class="btn btn-ghost btn-sm" href="${site.url}" target="_blank" rel="noopener">Open ↗</a>` : '';
-  const logs = site.lastDeployId
-    ? `<a class="btn btn-ghost btn-sm" href="/deploy.html?id=${site.lastDeployId}">Logs</a>` : '';
   const badge = site.source === 'upload' ? `<span class="badge">uploaded</span>`
     : (site.repo ? `<span class="badge">github</span>` : '');
+  const primary = site.customDomain || site.domain;
   const sub = site.repo ? site.repo : 'uploaded files';
+  const extra = site.customDomain ? ` · also ${site.domain}` : '';
   return `
     <div class="card">
       <div class="info">
-        <p class="name">${site.name} ${badge}</p>
-        <a class="domain" href="${site.url}" target="_blank" rel="noopener">${site.domain}</a>
-        <div class="meta">${sub} · deployed ${timeAgo(site.lastDeployAt)}</div>
+        <p class="name"><a class="namelink" href="/site.html?id=${site.id}">${site.name}</a> ${badge}</p>
+        <a class="domain" href="https://${primary}" target="_blank" rel="noopener">${primary}</a>
+        <div class="meta">${sub} · deployed ${timeAgo(site.lastDeployAt)}${extra}</div>
       </div>
       ${pill(site.status)}
-      <div class="actions">${open}${logs}
+      <div class="actions">${open}
+        <a class="btn btn-ghost btn-sm" href="/site.html?id=${site.id}">Manage</a>
         <button class="btn btn-primary btn-sm" data-deploy="${site.id}">Redeploy</button>
       </div>
     </div>`;

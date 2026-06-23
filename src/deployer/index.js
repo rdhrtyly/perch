@@ -108,7 +108,31 @@ function publishStatic(deployId, site, builtDir) {
       !src.includes(`${path.sep}.git`) && !src.includes(`${path.sep}node_modules`),
   });
 
+  injectBeacon(dest, site);
   logs.log(deployId, `Published files to ${dest}`);
+}
+
+// Add the tiny visit-counter script to every .html page we publish.
+function injectBeacon(dir, site) {
+  if (!config.dashboardDomain) return; // need a place to send hits
+  const snippet =
+    `\n<script>(function(){try{var i=new Image();` +
+    `i.src="https://${config.dashboardDomain}/_perch/hit?s=${site.id}&t="+Date.now();}catch(e){}})();</script>\n`;
+  for (const file of walkHtml(dir)) {
+    let html = fs.readFileSync(file, 'utf8');
+    if (html.includes('/_perch/hit')) continue; // already has it
+    html = html.includes('</body>') ? html.replace('</body>', snippet + '</body>') : html + snippet;
+    fs.writeFileSync(file, html);
+  }
+}
+
+function walkHtml(dir, out = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walkHtml(p, out);
+    else if (e.name.toLowerCase().endsWith('.html')) out.push(p);
+  }
+  return out;
 }
 
 module.exports = { deploy };

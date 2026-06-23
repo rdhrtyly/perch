@@ -10,6 +10,8 @@ const logs = require('../logs/stream');
 const deployer = require('../deployer');
 const caddy = require('../deployer/caddy');
 const porkbun = require('../domains/porkbun');
+const stats = require('../stats');
+const { execSync } = require('child_process');
 
 const router = express.Router();
 
@@ -91,6 +93,28 @@ router.post('/sites/:id/deploy', (req, res) => {
   res.status(202).json({ ok: true, deployId: store.getSite(site.id).lastDeployId });
 });
 
+// Visit stats for a site (for the per-site page).
+router.get('/sites/:id/stats', (req, res) => {
+  if (!store.getSite(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json(stats.getStats(req.params.id));
+});
+
+// Delete a site: remove its files, container, stats, and Caddy entry.
+router.delete('/sites/:id', async (req, res) => {
+  const site = store.getSite(req.params.id);
+  if (!site) return res.status(404).json({ error: 'not found' });
+
+  if (site.type === 'nextjs') {
+    try { execSync(`docker rm -f perch-${site.id}`, { stdio: 'ignore' }); } catch { /* ok */ }
+  }
+  fs.rmSync(path.join(config.workspaceDir, site.id), { recursive: true, force: true });
+  fs.rmSync(path.join(config.sitesDir, site.id), { recursive: true, force: true });
+  store.removeSite(site.id);
+  stats.removeSite(site.id);
+  await caddy.writeAndReload();
+  res.json({ ok: true });
+});
+
 // ── Deploys / live logs ──────────────────────────────────────────
 
 router.get('/deploys/:id', (req, res) => {
@@ -132,10 +156,11 @@ router.post('/domains/buy', async (req, res) => {
     const reg = await porkbun.registerDomain(domain, { dryRun: !!dryRun });
 
     // On a real purchase, wire it up: DNS → server, attach to site, HTTPS.
+    // We ADD the custom domain (the site keeps its .useperch.dev address too).
     if (!dryRun) {
       await porkbun.pointDomainAtServer(domain, config.serverIp);
       if (siteId && store.getSite(siteId)) {
-        store.updateSite(siteId, { domain, domainSource: 'porkbun', url: `https://${domain}` });
+        store.updateSite(siteId, { customDomain: domain, domainSource: 'porkbun' });
         await caddy.writeAndReload();
       }
     }

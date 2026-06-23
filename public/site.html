@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Site · Perch</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead" style="text-align:left">
+      <a class="back" href="/">← All sites</a>
+      <h1 id="title" style="font-size:40px;margin-top:14px">Loading…</h1>
+      <div id="domains" class="subtitle"></div>
+    </header>
+
+    <div class="statusbar">
+      <span id="status" class="pill"><span class="dot"></span>—</span>
+      <span class="subtitle" id="lastDeploy" style="font-size:13px"></span>
+    </div>
+
+    <!-- Visitor stats -->
+    <section class="section" style="margin-top:30px">
+      <div class="section-head"><h2>Visitors</h2></div>
+      <div class="stat-grid" id="stats">
+        <div class="stat"><div class="num" id="sViews">—</div><div class="lbl">Page views</div></div>
+        <div class="stat"><div class="num" id="sVisitors">—</div><div class="lbl">Unique visitors</div></div>
+        <div class="stat"><div class="num" id="sWeek">—</div><div class="lbl">Views (7 days)</div></div>
+        <div class="stat"><div class="num" id="sDay">—</div><div class="lbl">Views (24 h)</div></div>
+      </div>
+      <p class="subtitle" id="statsNote" style="font-size:12.5px;margin-top:12px"></p>
+    </section>
+
+    <!-- Actions -->
+    <section class="section">
+      <div class="section-head"><h2>Manage</h2></div>
+      <div class="panel">
+        <div class="manage-actions">
+          <a class="btn btn-primary" id="openBtn" target="_blank" rel="noopener">Open site ↗</a>
+          <button class="btn btn-ghost" id="redeployBtn">Redeploy</button>
+          <a class="btn btn-ghost" id="logsBtn">View last logs</a>
+          <a class="btn btn-ghost" href="/#domainsSection">Connect a domain</a>
+          <button class="btn btn-danger" id="deleteBtn">Delete site</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/site.js"></script>
+</body>
+</html>
