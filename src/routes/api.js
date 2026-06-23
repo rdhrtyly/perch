@@ -13,6 +13,7 @@ const porkbun = require('../domains/porkbun');
 const stats = require('../stats');
 const uptime = require('../uptime');
 const notify = require('../notify');
+const tokens = require('../tokens');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const auth = require('../auth');
@@ -310,6 +311,14 @@ router.post('/sites/:id/unshare', (req, res) => {
   store.updateSite(site.id, { collaborators: (site.collaborators || []).filter((u) => u !== userId) });
   res.json({ ok: true });
 });
+
+// ── Deploy tokens (for the Claude connector) ─────────────────────
+router.get('/tokens', (req, res) => res.json({ tokens: tokens.listFor(req.userId) }));
+router.post('/tokens', (req, res) => {
+  const token = tokens.generate(req.userId, String((req.body || {}).name || 'connector'));
+  res.status(201).json({ token }); // shown once
+});
+router.delete('/tokens/:id', (req, res) => { tokens.revoke(req.params.id, req.userId); res.json({ ok: true }); });
 
 // ── Notifications (the 🔔 bell) ──────────────────────────────────
 router.get('/notifications', (req, res) => res.json(notify.listFor(req.userId)));

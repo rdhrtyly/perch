@@ -252,6 +252,10 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color
 .envbox::placeholder { color: var(--faint); }
 .envbox:focus { border-color: var(--gold); }
 
+/* Deploy token reveal */
+.token-reveal { margin-top: 14px; padding: 14px; background: var(--gold-soft); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--text); }
+.token-reveal code { display: inline-block; margin-top: 6px; word-break: break-all; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
+
 /* Notification bell */
 .bell-wrap { position: relative; }
 .bell-count { background: var(--failed); color: #fff; border-radius: 999px; font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px; }

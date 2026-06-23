@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const express = require('express');
 const config = require('./config');
 const store = require('./store');
+const tokens = require('./tokens');
 
 const USERS_FILE = path.join(config.dataDir, 'users.json');
 const KEY_FILE = path.join(config.dataDir, 'session.key');
@@ -91,7 +92,12 @@ function isAdmin(user) {
 }
 
 function requireAuth(req, res, next) {
-  const user = getUser(getUserId(req));
+  // Login cookie first, then a "Authorization: Bearer <token>" header (connector).
+  let user = getUser(getUserId(req));
+  if (!user) {
+    const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+    if (m) user = getUser(tokens.verify(m[1].trim()));
+  }
   if (!user) return res.status(401).json({ error: 'not logged in' });
   req.userId = user.id;
   req.user = user;

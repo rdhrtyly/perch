@@ -12,6 +12,7 @@ const caddy = require('./deployer/caddy');
 const stats = require('./stats');
 const uptime = require('./uptime');
 const notify = require('./notify');
+const tokens = require('./tokens');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -106,6 +107,10 @@ uptime.startMonitor();
 // Load notifications (the 🔔 bell).
 notify.load();
 notify.startAutoFlush();
+
+// Load deploy tokens (for the Claude connector).
+tokens.load();
+tokens.startAutoFlush();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.

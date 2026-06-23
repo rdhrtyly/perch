@@ -291,6 +291,31 @@ document.addEventListener('click', (e) => {
   if (notifPanel.style.display === 'block' && !notifPanel.contains(e.target) && !bellBtn.contains(e.target)) notifPanel.style.display = 'none';
 });
 
+// ── deploy tokens ─────────────────────────────────────────────────
+async function loadTokens() {
+  const panel = document.getElementById('tokensPanel');
+  if (!panel) return;
+  const data = await fetch('/api/tokens').then((r) => (r.ok ? r.json() : { tokens: [] })).catch(() => ({ tokens: [] }));
+  const list = (data.tokens || []).length
+    ? data.tokens.map((t) => `<div class="version-row"><span>🔑 ${t.name} <span class="subtitle" style="font-size:12px">· made ${timeAgo(t.createdAt)}</span></span><button class="btn btn-ghost btn-sm" data-revoke="${t.id}">Revoke</button></div>`).join('')
+    : `<div class="subtitle" style="font-size:13px">No tokens yet.</div>`;
+  panel.innerHTML = `<p class="subtitle" style="font-size:13px;margin-top:0">A token lets the Claude connector deploy to your Perch. Treat it like a password.</p>
+    <div class="inline-form"><input id="tokenName" class="inline-input" placeholder="token name (e.g. claude)" /><button class="btn btn-primary" id="makeToken">Create token</button></div>
+    <div id="tokenReveal"></div>
+    <div style="margin-top:14px">${list}</div>`;
+  document.getElementById('makeToken').addEventListener('click', async () => {
+    const name = document.getElementById('tokenName').value.trim() || 'connector';
+    const r = await fetch('/api/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const d = await r.json();
+    if (d.token) document.getElementById('tokenReveal').innerHTML = `<div class="token-reveal">⚠️ Copy this now — you won't see it again:<br><code>${d.token}</code></div>`;
+  });
+  panel.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Revoke this token? Anything using it will stop working.')) return;
+    await fetch(`/api/tokens/${b.dataset.revoke}`, { method: 'DELETE' });
+    loadTokens();
+  }));
+}
+
 // ── auth + boot ───────────────────────────────────────────────────
 logoutBtn.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
@@ -310,6 +335,7 @@ async function boot() {
 
   loadSites();
   loadNotifications();
+  loadTokens();
   initDomains();
   setInterval(() => { loadSites(); loadNotifications(); }, 5000);
 }
