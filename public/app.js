@@ -263,6 +263,7 @@ async function boot() {
   if (!me.ok) { location.href = '/landing.html'; return; }
   const user = await me.json();
   userEmail.textContent = user.email;
+  document.getElementById('statusLink').href = '/status.html?u=' + user.id;
   userbar.style.display = 'flex';
 
   loadSites();

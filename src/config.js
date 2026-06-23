@@ -29,6 +29,7 @@ const config = {
   dataDir: DATA_DIR,
   workspaceDir: path.join(DATA_DIR, 'workspace'), // git clones live here
   sitesDir: path.join(DATA_DIR, 'sites'),         // built static files Caddy serves
+  versionsDir: path.join(DATA_DIR, 'versions'),   // past versions, for rollback
   sitesFile: path.join(DATA_DIR, 'sites.json'),   // the list of your sites
   caddyfile: path.join(DATA_DIR, 'Caddyfile'),    // the config Caddy reads
 

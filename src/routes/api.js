@@ -12,6 +12,7 @@ const caddy = require('../deployer/caddy');
 const porkbun = require('../domains/porkbun');
 const stats = require('../stats');
 const QRCode = require('qrcode');
+const bcrypt = require('bcryptjs');
 const { execSync } = require('child_process');
 
 const router = express.Router();
@@ -108,6 +109,44 @@ router.get('/sites/:id/stats', (req, res) => {
   res.json(stats.getStats(req.params.id));
 });
 
+// Password-protect a site (HTTP basic auth via Caddy). Username is "perch".
+router.post('/sites/:id/protect', async (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const password = String((req.body || {}).password || '');
+  if (password.length < 4) return res.status(400).json({ error: 'password must be at least 4 characters' });
+  const authHash = bcrypt.hashSync(password, 10);
+  store.updateSite(site.id, { protected: true, authHash });
+  await caddy.writeAndReload();
+  res.json({ ok: true });
+});
+
+// Remove the password lock.
+router.post('/sites/:id/unprotect', async (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  store.updateSite(site.id, { protected: false, authHash: null });
+  await caddy.writeAndReload();
+  res.json({ ok: true });
+});
+
+// Roll back to a saved previous version (static sites).
+router.post('/sites/:id/rollback', async (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const versionId = String((req.body || {}).versionId || '');
+  const verDir = path.join(config.versionsDir, site.id, versionId);
+  if (!versionId || !fs.existsSync(verDir)) return res.status(404).json({ error: 'version not found' });
+
+  const dest = path.join(config.sitesDir, site.id);
+  fs.rmSync(dest, { recursive: true, force: true });
+  fs.mkdirSync(dest, { recursive: true });
+  fs.cpSync(verDir, dest, { recursive: true });
+  store.updateSite(site.id, { status: 'live' });
+  await caddy.writeAndReload();
+  res.json({ ok: true });
+});
+
 // A QR code (SVG) that opens the site — generated on the server, no CDN.
 router.get('/sites/:id/qr', async (req, res) => {
   const site = ownedSite(req);
@@ -131,6 +170,7 @@ router.delete('/sites/:id', async (req, res) => {
   }
   fs.rmSync(path.join(config.workspaceDir, site.id), { recursive: true, force: true });
   fs.rmSync(path.join(config.sitesDir, site.id), { recursive: true, force: true });
+  fs.rmSync(path.join(config.versionsDir, site.id), { recursive: true, force: true });
   store.removeSite(site.id);
   stats.removeSite(site.id);
   await caddy.writeAndReload();

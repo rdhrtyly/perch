@@ -237,6 +237,16 @@ h1 {
 .feature h3 { font-size: 15px; margin: 0 0 6px; }
 .feature p { font-size: 13px; color: var(--muted); margin: 0; }
 
+/* Privacy + versions panels */
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.inline-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.inline-input { flex: 1; min-width: 160px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px 13px; font-size: 14px; font-family: inherit; outline: none; transition: border-color .15s; }
+.inline-input::placeholder { color: var(--faint); }
+.inline-input:focus { border-color: var(--gold); }
+.version-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+.version-row:last-child { border-bottom: none; }
+code { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color: var(--gold); font-size: .92em; }
+
 @media (max-width: 560px) {
   h1 { font-size: 38px; }
   .fields { grid-template-columns: 1fr; }

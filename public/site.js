@@ -1,14 +1,10 @@
 // site.js — the per-site management page.
 
 const id = new URLSearchParams(location.search).get('id');
-
 const $ = (x) => document.getElementById(x);
 
-function pill(status) {
-  const label = { live: 'Live', building: 'Building', failed: 'Failed', new: 'Not deployed' }[status] || status;
-  $('status').className = 'pill ' + status;
-  $('status').innerHTML = `<span class="dot"></span>${label}`;
-}
+let SITE = null;
+
 function timeAgo(ms) {
   if (!ms) return 'never';
   const s = Math.floor((Date.now() - ms) / 1000);
@@ -18,8 +14,7 @@ function timeAgo(ms) {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-let SITE = null;
-
+// Full load: runs on first open and after any action.
 async function load() {
   const r = await fetch('/api/sites');
   if (r.status === 401) { location.href = '/login.html'; return; }
@@ -27,51 +22,105 @@ async function load() {
   SITE = sites.find((s) => s.id === id);
   if (!SITE) { $('title').textContent = 'Site not found'; return; }
 
+  renderHeader();
+  renderPrivacy();
+  renderVersions();
+  await refreshStats();
+
+  const qr = $('qr');
+  if (qr && !qr.src) qr.src = `/api/sites/${id}/qr`;
+}
+
+function renderHeader() {
   $('title').textContent = SITE.name;
-  pill(SITE.status);
+  const label = { live: 'Live', building: 'Building', failed: 'Failed', new: 'Not deployed' }[SITE.status] || SITE.status;
+  $('status').className = 'pill ' + SITE.status;
+  $('status').innerHTML = `<span class="dot"></span>${label}`;
   $('lastDeploy').textContent = 'Last deployed ' + timeAgo(SITE.lastDeployAt);
 
-  // Domains (subdomain + custom, if any)
-  const links = [SITE.domain, SITE.customDomain].filter(Boolean)
+  $('domains').innerHTML = [SITE.domain, SITE.customDomain].filter(Boolean)
     .map((d) => `<a class="domain" href="https://${d}" target="_blank" rel="noopener">${d} ↗</a>`)
     .join(' &nbsp;·&nbsp; ');
-  $('domains').innerHTML = links;
 
-  // Action buttons
   $('openBtn').href = SITE.url;
   $('logsBtn').href = SITE.lastDeployId ? `/deploy.html?id=${SITE.lastDeployId}` : '#';
-  if (!SITE.lastDeployId) $('logsBtn').style.display = 'none';
+  $('logsBtn').style.display = SITE.lastDeployId ? '' : 'none';
+}
 
-  // Stats
-  const st = await fetch(`/api/sites/${id}/stats`).then((r) => r.json());
+// Stats only — safe to run on the auto-refresh without disturbing inputs.
+async function refreshStats() {
+  const res = await fetch(`/api/sites/${id}/stats`);
+  if (!res.ok) return;
+  const st = await res.json();
   $('sViews').textContent = st.total ?? 0;
   $('sVisitors').textContent = st.visitors ?? 0;
   $('sWeek').textContent = st.last7d ?? 0;
   $('sDay').textContent = st.last24h ?? 0;
-  $('statsNote').textContent = SITE.type === 'nextjs'
+  $('statsNote').textContent = SITE && SITE.type === 'nextjs'
     ? 'Live apps (Next.js) aren’t counted yet — stats are for static/React sites.'
     : 'Counting starts from the first deploy after analytics was added — redeploy if you see zeros.';
-
   renderChart(st.daily || []);
-  const qr = $('qr');
-  if (qr && !qr.src) qr.src = `/api/sites/${id}/qr`; // server-drawn QR
 }
 
-// Little bar chart of daily views.
 function renderChart(daily) {
   const el = $('chart');
   if (!el) return;
   const max = Math.max(1, ...daily.map((d) => d.count));
   el.innerHTML = daily.map((d) => {
     const h = Math.round((d.count / max) * 100);
-    return `<div class="bar" title="${d.label}: ${d.count} views">
-      <div class="bar-fill" style="height:${h}%"></div>
-      <div class="bar-x">${d.label.split('/')[1]}</div>
-    </div>`;
+    return `<div class="bar" title="${d.label}: ${d.count} views"><div class="bar-fill" style="height:${h}%"></div><div class="bar-x">${d.label.split('/')[1]}</div></div>`;
   }).join('');
 }
 
+// ── Privacy (password protect) ───────────────────────────────────
+function renderPrivacy() {
+  const el = $('privacyPanel');
+  if (SITE.protected) {
+    el.innerHTML = `<div class="row-between">
+      <div>🔒 <b>Password-protected.</b> <span class="subtitle" style="font-size:13px">Username: <code>perch</code></span></div>
+      <button class="btn btn-ghost" id="unprotectBtn">Remove password</button></div>`;
+    $('unprotectBtn').addEventListener('click', async () => {
+      $('unprotectBtn').disabled = true;
+      await fetch(`/api/sites/${id}/unprotect`, { method: 'POST' });
+      load();
+    });
+  } else {
+    el.innerHTML = `<div class="inline-form">
+        <input id="pwInput" type="text" class="inline-input" placeholder="set a password" />
+        <button class="btn btn-primary" id="protectBtn">Protect</button>
+      </div>
+      <div class="subtitle" style="font-size:12.5px;margin-top:10px">Visitors will need username <code>perch</code> + this password to open the site.</div>`;
+    $('protectBtn').addEventListener('click', async () => {
+      const pw = $('pwInput').value.trim();
+      if (pw.length < 4) { alert('Password must be at least 4 characters'); return; }
+      $('protectBtn').disabled = true; $('protectBtn').textContent = 'Locking…';
+      const r = await fetch(`/api/sites/${id}/protect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+      if (r.ok) load(); else { alert('Could not protect'); $('protectBtn').disabled = false; $('protectBtn').textContent = 'Protect'; }
+    });
+  }
+}
 
+// ── Versions (rollback) ──────────────────────────────────────────
+function renderVersions() {
+  const el = $('versionsPanel');
+  const vs = SITE.versions || [];
+  if (!vs.length) {
+    el.innerHTML = `<div class="subtitle" style="font-size:13px">No previous versions yet — Perch saves one each time you redeploy, so you can roll back here.</div>`;
+    return;
+  }
+  el.innerHTML = vs.map((v) => `<div class="version-row">
+    <span>Saved ${timeAgo(v.at)} <span class="subtitle" style="font-size:12px">(${new Date(v.at).toLocaleString()})</span></span>
+    <button class="btn btn-ghost btn-sm" data-restore="${v.id}">Restore</button>
+  </div>`).join('');
+  el.querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Roll back to this version? It replaces the current live version.')) return;
+    b.disabled = true; b.textContent = 'Restoring…';
+    const r = await fetch(`/api/sites/${id}/rollback`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionId: b.dataset.restore }) });
+    if (r.ok) load(); else { alert('Rollback failed'); b.disabled = false; b.textContent = 'Restore'; }
+  }));
+}
+
+// ── Actions ──────────────────────────────────────────────────────
 $('redeployBtn').addEventListener('click', async () => {
   $('redeployBtn').disabled = true; $('redeployBtn').textContent = 'Starting…';
   const r = await fetch(`/api/sites/${id}/deploy`, { method: 'POST' });
@@ -88,4 +137,4 @@ $('deleteBtn').addEventListener('click', async () => {
 });
 
 load();
-setInterval(load, 8000);
+setInterval(refreshStats, 8000); // only stats auto-refresh (won't clobber inputs)

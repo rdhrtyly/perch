@@ -70,6 +70,19 @@ app.get('/_perch/hit', (req, res) => {
 // ── Accounts (signup / login / logout) — public ──────────────────
 app.use('/api/auth', auth.router);
 
+// ── Public status page data (no login) ───────────────────────────
+// Shows one user's sites + status. Keyed by their (unguessable) id.
+app.get('/api/public/status/:userId', (req, res) => {
+  const sites = store.listByUser(req.params.userId).map((s) => ({
+    name: s.name,
+    domain: s.customDomain || s.domain,
+    url: s.url,
+    status: s.status,
+    lastDeployAt: s.lastDeployAt,
+  }));
+  res.json({ sites });
+});
+
 // ── The dashboard's API — requires being logged in ───────────────
 app.use('/api', auth.requireAuth, api);
 
@@ -77,7 +90,7 @@ app.use('/api', auth.requireAuth, api);
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Make sure the folders Perch needs exist.
-for (const dir of [config.dataDir, config.workspaceDir, config.sitesDir]) {
+for (const dir of [config.dataDir, config.workspaceDir, config.sitesDir, config.versionsDir]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 

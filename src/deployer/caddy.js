@@ -31,15 +31,21 @@ function buildCaddyfile() {
     // A site answers on its subdomain AND any custom domain it's connected to.
     const hosts = [site.domain, site.customDomain].filter(Boolean).join(', ');
 
+    // Optional password lock (HTTP basic auth). Username is always "perch".
+    const auth = (site.protected && site.authHash)
+      ? `\tbasic_auth {\n\t\tperch ${site.authHash}\n\t}\n`
+      : '';
+
     if (site.type === 'nextjs' && site.port) {
       // Next.js: forward the web address to the running app.
-      out += `${hosts} {\n\treverse_proxy localhost:${site.port}\n\tencode gzip\n}\n\n`;
+      out += `${hosts} {\n${auth}\treverse_proxy localhost:${site.port}\n\tencode gzip\n}\n\n`;
     } else {
       // Static / React: serve the built files straight from disk.
       // (This path is how the Caddy CONTAINER sees the files.)
       const root = path.posix.join(config.caddySitesPath, site.id);
       out +=
         `${hosts} {\n` +
+        auth +
         `\troot * ${root}\n` +
         `\tencode gzip\n` +
         `\ttry_files {path} {path}/ /index.html\n` + // makes React Router etc. work

@@ -98,6 +98,8 @@ async function getCode(deployId, site, repoDir) {
 // Copy the finished files into the folder Caddy serves from.
 function publishStatic(deployId, site, builtDir) {
   const dest = path.join(config.sitesDir, site.id);
+  // Save the currently-live version first, so we can roll back to it later.
+  if (fs.existsSync(dest)) snapshotVersion(deployId, site);
   fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(dest, { recursive: true });
 
@@ -133,6 +135,26 @@ function walkHtml(dir, out = []) {
     else if (e.name.toLowerCase().endsWith('.html')) out.push(p);
   }
   return out;
+}
+
+// Save the current live files as a version we can roll back to (keep last 3).
+function snapshotVersion(deployId, site) {
+  try {
+    const src = path.join(config.sitesDir, site.id);
+    const verId = String(Date.now());
+    const verDir = path.join(config.versionsDir, site.id, verId);
+    fs.mkdirSync(path.dirname(verDir), { recursive: true });
+    fs.cpSync(src, verDir, { recursive: true });
+
+    const fresh = store.getSite(site.id) || site;
+    const versions = [{ id: verId, at: Date.now() }, ...(fresh.versions || [])];
+    const keep = versions.slice(0, 3);
+    for (const old of versions.slice(3)) {
+      fs.rmSync(path.join(config.versionsDir, site.id, old.id), { recursive: true, force: true });
+    }
+    store.updateSite(site.id, { versions: keep });
+    logs.log(deployId, 'Saved the previous version (you can roll back to it).');
+  } catch (e) { /* snapshots are best-effort */ }
 }
 
 module.exports = { deploy };
