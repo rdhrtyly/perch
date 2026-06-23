@@ -25,6 +25,7 @@ async function load() {
   renderHeader();
   renderUptime();
   renderPrivacy();
+  renderShare();
   renderVersions();
   await refreshStats();
   loadEnv();
@@ -125,6 +126,42 @@ function renderPrivacy() {
       if (r.ok) load(); else { alert('Could not protect'); $('protectBtn').disabled = false; $('protectBtn').textContent = 'Protect'; }
     });
   }
+}
+
+// ── Share with a friend ──────────────────────────────────────────
+async function renderShare() {
+  const el = $('sharePanel');
+  // Collaborators (non-owners) can manage but not share/delete.
+  if (!SITE.isOwner) {
+    document.querySelector('#shareSection h2').textContent = 'Shared';
+    el.innerHTML = `<span class="subtitle" style="font-size:13px">👥 This site was shared with you. You can manage it, but only the owner can delete it or change who it's shared with.</span>`;
+    const del = $('deleteBtn'); if (del) del.style.display = 'none';
+    return;
+  }
+  const data = await fetch(`/api/sites/${id}/collaborators`).then((r) => (r.ok ? r.json() : { collaborators: [] }));
+  const list = (data.collaborators || []).length
+    ? data.collaborators.map((c) => `<div class="version-row"><span>${c.email}</span><button class="btn btn-ghost btn-sm" data-unshare="${c.userId}">Remove</button></div>`).join('')
+    : `<div class="subtitle" style="font-size:13px">Not shared with anyone yet.</div>`;
+  el.innerHTML = `<div class="inline-form">
+      <input id="shareEmail" type="email" class="inline-input" placeholder="friend's email" />
+      <button class="btn btn-primary" id="shareBtn">Share</button>
+    </div>
+    <div id="shareMsg" class="subtitle" style="font-size:12.5px;margin-top:8px"></div>
+    <div style="margin-top:14px">${list}</div>`;
+  $('shareBtn').addEventListener('click', async () => {
+    const email = $('shareEmail').value.trim();
+    if (!email) return;
+    $('shareBtn').disabled = true;
+    const r = await fetch(`/api/sites/${id}/share`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    const d = await r.json();
+    $('shareBtn').disabled = false;
+    if (r.ok) { $('shareEmail').value = ''; renderShare(); }
+    else $('shareMsg').textContent = d.error || 'Could not share';
+  });
+  el.querySelectorAll('[data-unshare]').forEach((b) => b.addEventListener('click', async () => {
+    await fetch(`/api/sites/${id}/unshare`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: b.dataset.unshare }) });
+    renderShare();
+  }));
 }
 
 // ── Versions (rollback) ──────────────────────────────────────────

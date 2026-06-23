@@ -46,13 +46,14 @@ function card(site) {
     ? `<a class="btn btn-ghost btn-sm" href="${site.url}" target="_blank" rel="noopener">Open ↗</a>` : '';
   const badge = site.source === 'upload' ? `<span class="badge">uploaded</span>`
     : (site.repo ? `<span class="badge">github</span>` : '');
+  const sharedBadge = site.sharedWithMe ? `<span class="badge">shared with you</span>` : '';
   const primary = site.customDomain || site.domain;
   const sub = site.repo ? site.repo : 'uploaded files';
   const extra = site.customDomain ? ` · also ${site.domain}` : '';
   return `
     <div class="card">
       <div class="info">
-        <p class="name"><a class="namelink" href="/site.html?id=${site.id}">${site.name}</a> ${badge}</p>
+        <p class="name"><a class="namelink" href="/site.html?id=${site.id}">${site.name}</a> ${badge} ${sharedBadge}</p>
         <a class="domain" href="https://${primary}" target="_blank" rel="noopener">${primary}</a>
         <div class="meta">${sub} · deployed ${timeAgo(site.lastDeployAt)}${extra}</div>
       </div>

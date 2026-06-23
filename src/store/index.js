@@ -69,9 +69,11 @@ function removeSite(id) {
   writeAll(readAll().filter((s) => s.id !== id));
 }
 
-// Only the sites that belong to one user.
+// Sites a user can see: ones they own, plus ones shared with them.
 function listByUser(userId) {
-  return readAll().filter((s) => s.userId === userId);
+  return readAll().filter(
+    (s) => s.userId === userId || (s.collaborators && s.collaborators.includes(userId))
+  );
 }
 
 // Give any owner-less sites (made before logins existed) to a user.

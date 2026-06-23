@@ -14,6 +14,7 @@ const stats = require('../stats');
 const uptime = require('../uptime');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
+const auth = require('../auth');
 const { execSync } = require('child_process');
 
 const router = express.Router();
@@ -24,16 +25,30 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024, files: 5000 },
 });
 
-// Get a site only if it belongs to the logged-in user (else null).
+// Owner only (for destructive / sharing actions).
 function ownedSite(req) {
   const s = store.getSite(req.params.id);
   return s && s.userId === req.userId ? s : null;
 }
 
-// Strip secret fields before sending a site to the browser.
-function publicSite(s) {
-  const { authHash, env, ...rest } = s;
-  return rest;
+// Owner OR a collaborator the site is shared with (for managing).
+function accessibleSite(req) {
+  const s = store.getSite(req.params.id);
+  if (!s) return null;
+  if (s.userId === req.userId) return s;
+  if (s.collaborators && s.collaborators.includes(req.userId)) return s;
+  return null;
+}
+
+// Strip secret fields and add per-user flags before sending to the browser.
+function publicSite(s, userId) {
+  const { authHash, env, collaborators, ...rest } = s;
+  return {
+    ...rest,
+    isOwner: s.userId === userId,
+    shared: !!(collaborators && collaborators.length),
+    sharedWithMe: !!(collaborators && collaborators.includes(userId)) && s.userId !== userId,
+  };
 }
 
 // Is this user at their site limit? (Owners have no limit.)
@@ -45,7 +60,7 @@ function atLimit(req) {
 // ── Sites ─────────────────────────────────────────────────────────
 
 router.get('/sites', (req, res) => {
-  res.json(store.listByUser(req.userId).map((s) => ({ ...publicSite(s), ...uptime.getUptime(s.id) })));
+  res.json(store.listByUser(req.userId).map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) })));
 });
 
 // Add a site from a GitHub repo.
@@ -66,7 +81,7 @@ router.post('/sites', (req, res) => {
     lastDeployAt: null, lastDeployId: null,
     url: `https://${finalDomain}`,
   });
-  res.status(201).json(publicSite(store.getSite(id)));
+  res.status(201).json(publicSite(store.getSite(id), req.userId));
 });
 
 // Add a site by UPLOADING files (no GitHub needed) — the Vercel-style flow.
@@ -112,7 +127,7 @@ router.post('/upload', upload.any(), (req, res) => {
 
 // Redeploy a site.
 router.post('/sites/:id/deploy', (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   deployer.deploy(site);
   res.status(202).json({ ok: true, deployId: store.getSite(site.id).lastDeployId });
@@ -120,13 +135,13 @@ router.post('/sites/:id/deploy', (req, res) => {
 
 // Visit stats for a site (for the per-site page).
 router.get('/sites/:id/stats', (req, res) => {
-  if (!ownedSite(req)) return res.status(404).json({ error: 'not found' });
+  if (!accessibleSite(req)) return res.status(404).json({ error: 'not found' });
   res.json(stats.getStats(req.params.id));
 });
 
 // Password-protect a site (HTTP basic auth via Caddy). Username is "perch".
 router.post('/sites/:id/protect', async (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   const password = String((req.body || {}).password || '');
   if (password.length < 4) return res.status(400).json({ error: 'password must be at least 4 characters' });
@@ -138,7 +153,7 @@ router.post('/sites/:id/protect', async (req, res) => {
 
 // Remove the password lock.
 router.post('/sites/:id/unprotect', async (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   store.updateSite(site.id, { protected: false, authHash: null });
   await caddy.writeAndReload();
@@ -147,7 +162,7 @@ router.post('/sites/:id/unprotect', async (req, res) => {
 
 // Roll back to a saved previous version (static sites).
 router.post('/sites/:id/rollback', async (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   const versionId = String((req.body || {}).versionId || '');
   const verDir = path.join(config.versionsDir, site.id, versionId);
@@ -164,7 +179,7 @@ router.post('/sites/:id/rollback', async (req, res) => {
 
 // A QR code (SVG) that opens the site — generated on the server, no CDN.
 router.get('/sites/:id/qr', async (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).end();
   const url = 'https://' + (site.customDomain || site.domain);
   try {
@@ -177,7 +192,7 @@ router.get('/sites/:id/qr', async (req, res) => {
 
 // Delete a site: remove its files, container, stats, and Caddy entry.
 router.delete('/sites/:id', async (req, res) => {
-  const site = ownedSite(req);
+  const site = ownedSite(req); // only the owner can delete
   if (!site) return res.status(404).json({ error: 'not found' });
 
   if (site.type === 'nextjs') {
@@ -195,14 +210,14 @@ router.delete('/sites/:id', async (req, res) => {
 
 // Get a site's secret env variables (owner only).
 router.get('/sites/:id/env', (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   res.json({ env: site.env || {} });
 });
 
 // Set a site's secret env variables. (Redeploy to apply them.)
 router.post('/sites/:id/env', (req, res) => {
-  const site = ownedSite(req);
+  const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   const input = (req.body || {}).env || {};
   const env = {};
@@ -211,6 +226,42 @@ router.post('/sites/:id/env', (req, res) => {
   }
   store.updateSite(site.id, { env });
   res.json({ ok: true, env });
+});
+
+// ── Sharing (owner only) ─────────────────────────────────────────
+
+// Who can this site be managed by? (owner + collaborators, with emails)
+router.get('/sites/:id/collaborators', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const people = (site.collaborators || []).map((uid) => {
+    const u = auth.getUserById(uid);
+    return { userId: uid, email: u ? u.email : '(unknown)' };
+  });
+  res.json({ collaborators: people });
+});
+
+// Share with a friend by email (they must already have an account).
+router.post('/sites/:id/share', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const friend = auth.findUserByEmail((req.body || {}).email || '');
+  if (!friend) return res.status(404).json({ error: 'No account with that email — they need to sign up first.' });
+  if (friend.id === site.userId) return res.status(400).json({ error: "That's you (the owner)." });
+
+  const collaborators = site.collaborators || [];
+  if (!collaborators.includes(friend.id)) collaborators.push(friend.id);
+  store.updateSite(site.id, { collaborators });
+  res.json({ ok: true });
+});
+
+// Stop sharing with someone.
+router.post('/sites/:id/unshare', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const userId = String((req.body || {}).userId || '');
+  store.updateSite(site.id, { collaborators: (site.collaborators || []).filter((u) => u !== userId) });
+  res.json({ ok: true });
 });
 
 // ── Deploys / live logs ──────────────────────────────────────────

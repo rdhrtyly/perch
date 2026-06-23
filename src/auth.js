@@ -140,4 +140,12 @@ router.get('/me', (req, res) => {
   res.json({ id: user.id, email: user.email, maxSites: config.maxSitesPerUser, unlimited: isAdmin(user) });
 });
 
-module.exports = { router, requireAuth, getUserId };
+// Look up a user by email (for sharing). Returns the user or undefined.
+function findUserByEmail(email) {
+  return findByEmail(String(email || '').trim().toLowerCase());
+}
+function getUserById(id) {
+  return getUser(id);
+}
+
+module.exports = { router, requireAuth, getUserId, findUserByEmail, getUserById };
