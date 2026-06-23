@@ -11,6 +11,7 @@ const deployer = require('../deployer');
 const caddy = require('../deployer/caddy');
 const porkbun = require('../domains/porkbun');
 const stats = require('../stats');
+const QRCode = require('qrcode');
 const { execSync } = require('child_process');
 
 const router = express.Router();
@@ -105,6 +106,19 @@ router.post('/sites/:id/deploy', (req, res) => {
 router.get('/sites/:id/stats', (req, res) => {
   if (!ownedSite(req)) return res.status(404).json({ error: 'not found' });
   res.json(stats.getStats(req.params.id));
+});
+
+// A QR code (SVG) that opens the site — generated on the server, no CDN.
+router.get('/sites/:id/qr', async (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).end();
+  const url = 'https://' + (site.customDomain || site.domain);
+  try {
+    const svg = await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#161a17', light: '#ffffff' } });
+    res.type('image/svg+xml').set('Cache-Control', 'no-store').send(svg);
+  } catch (e) {
+    res.status(500).end();
+  }
 });
 
 // Delete a site: remove its files, container, stats, and Caddy entry.

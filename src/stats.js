@@ -49,11 +49,23 @@ function getStats(siteId) {
   const s = data[siteId] || { total: 0, events: [] };
   const now = Date.now();
   const DAY = 86400000;
+
+  // Views per day for the last 14 days (for the little graph).
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const daily = [];
+  for (let i = 13; i >= 0; i--) {
+    const start = today.getTime() - i * DAY;
+    const end = start + DAY;
+    const d = new Date(start);
+    daily.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, count: s.events.filter((e) => e.t >= start && e.t < end).length });
+  }
+
   return {
     total: s.total,                                                   // all-time page views
     last24h: s.events.filter((e) => now - e.t < DAY).length,
     last7d: s.events.filter((e) => now - e.t < 7 * DAY).length,
     visitors: new Set(s.events.map((e) => e.ip)).size,               // unique-ish (recent)
+    daily,
   };
 }
 

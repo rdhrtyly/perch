@@ -31,8 +31,34 @@ function setStatus(status) {
   const label = { live: 'Live', building: 'Building', failed: 'Failed' }[status] || status;
   statusEl.className = 'pill ' + status;
   statusEl.innerHTML = `<span class="dot"></span>${label}`;
-  if (status === 'live') titleEl.textContent = 'Deployed 🎉';
+  if (status === 'live') { titleEl.textContent = 'Deployed 🎉'; celebrate(); }
   if (status === 'failed') titleEl.textContent = 'Deploy failed';
+}
+
+// Confetti + a little success chime when a deploy goes live.
+function celebrate() {
+  if (window.confetti) {
+    window.confetti({ particleCount: 130, spread: 80, origin: { y: 0.6 } });
+    const end = Date.now() + 700;
+    (function frame() {
+      window.confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0 } });
+      window.confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1 } });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    })();
+  }
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [523.25, 659.25, 783.99].forEach((f, i) => { // C-E-G chord
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+      o.start(t); o.stop(t + 0.45);
+    });
+  } catch (e) { /* sound is optional */ }
 }
 
 // Tick the elapsed-time label.

@@ -51,7 +51,26 @@ async function load() {
   $('statsNote').textContent = SITE.type === 'nextjs'
     ? 'Live apps (Next.js) aren’t counted yet — stats are for static/React sites.'
     : 'Counting starts from the first deploy after analytics was added — redeploy if you see zeros.';
+
+  renderChart(st.daily || []);
+  const qr = $('qr');
+  if (qr && !qr.src) qr.src = `/api/sites/${id}/qr`; // server-drawn QR
 }
+
+// Little bar chart of daily views.
+function renderChart(daily) {
+  const el = $('chart');
+  if (!el) return;
+  const max = Math.max(1, ...daily.map((d) => d.count));
+  el.innerHTML = daily.map((d) => {
+    const h = Math.round((d.count / max) * 100);
+    return `<div class="bar" title="${d.label}: ${d.count} views">
+      <div class="bar-fill" style="height:${h}%"></div>
+      <div class="bar-x">${d.label.split('/')[1]}</div>
+    </div>`;
+  }).join('');
+}
+
 
 $('redeployBtn').addEventListener('click', async () => {
   $('redeployBtn').disabled = true; $('redeployBtn').textContent = 'Starting…';

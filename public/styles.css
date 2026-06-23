@@ -218,9 +218,29 @@ h1 {
 .btn-danger { background: rgba(240,113,107,.12); color: #f6a39e; border-color: rgba(240,113,107,.3); }
 .btn-danger:hover { background: rgba(240,113,107,.2); }
 
+/* Visitor graph */
+.chart-card { margin-top: 16px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 18px 18px 12px; box-shadow: var(--shadow); }
+.chart-title { color: var(--muted); font-size: 12.5px; margin-bottom: 12px; }
+.chart { display: flex; align-items: flex-end; gap: 6px; height: 110px; }
+.bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+.bar-fill { width: 100%; min-height: 2px; background: var(--gold-grad); border-radius: 4px 4px 0 0; transition: height .3s ease; }
+.bar-x { font-size: 9px; color: var(--faint); }
+
+/* QR panel */
+.qr-panel { display: flex; align-items: center; gap: 20px; }
+.qr-img { background: #fff; border-radius: 10px; padding: 8px; }
+
+/* Landing feature cards */
+.feature-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.feature { background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 24px 16px; box-shadow: var(--shadow); }
+.feature .fi { font-size: 30px; margin-bottom: 10px; }
+.feature h3 { font-size: 15px; margin: 0 0 6px; }
+.feature p { font-size: 13px; color: var(--muted); margin: 0; }
+
 @media (max-width: 560px) {
   h1 { font-size: 38px; }
   .fields { grid-template-columns: 1fr; }
   .card { flex-wrap: wrap; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
 }

@@ -258,9 +258,9 @@ logoutBtn.addEventListener('click', async () => {
 });
 
 async function boot() {
-  // Must be logged in — otherwise go to the login page.
+  // Not logged in → show the public landing page.
   const me = await fetch('/api/auth/me');
-  if (!me.ok) { location.href = '/login.html'; return; }
+  if (!me.ok) { location.href = '/landing.html'; return; }
   const user = await me.json();
   userEmail.textContent = user.email;
   userbar.style.display = 'flex';

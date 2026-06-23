@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Perch — deploy anything</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap" style="text-align:center">
+    <header class="masthead" style="margin-top:40px">
+      <div class="logo">🪺 Perch</div>
+      <h1 style="font-size:60px;margin-top:26px">Deploy anything.</h1>
+      <p class="subtitle" style="font-size:20px;max-width:520px;margin:14px auto 0">
+        Drag in a folder or push to GitHub — your site goes live in seconds,
+        on its own web address, with HTTPS. Your own little Vercel.
+      </p>
+    </header>
+
+    <div style="display:flex;gap:12px;justify-content:center;margin:34px 0 10px">
+      <a class="btn btn-primary" href="/login.html?signup" style="padding:13px 26px;font-size:15px">Sign up free</a>
+      <a class="btn btn-ghost" href="/login.html" style="padding:13px 26px;font-size:15px">Log in</a>
+    </div>
+
+    <section class="section" style="margin-top:56px">
+      <div class="feature-grid">
+        <div class="feature"><div class="fi">📦</div><h3>Drag &amp; drop</h3><p>Drop a folder, it's live. No setup.</p></div>
+        <div class="feature"><div class="fi">🔒</div><h3>Automatic HTTPS</h3><p>Every site gets the padlock, free.</p></div>
+        <div class="feature"><div class="fi">📊</div><h3>Visitor stats</h3><p>See views &amp; visitors per site.</p></div>
+        <div class="feature"><div class="fi">🌐</div><h3>Custom domains</h3><p>Buy &amp; connect a domain in clicks.</p></div>
+      </div>
+    </section>
+
+    <p class="subtitle" style="font-size:13px;margin-top:60px;color:var(--faint)">🪺 Perch · self-hosted deploys</p>
+  </main>
+
+  <script>
+    // If you're already logged in, go straight to your dashboard.
+    fetch('/api/auth/me').then((r) => { if (r.ok) location.href = '/'; });
+  </script>
+</body>
+</html>

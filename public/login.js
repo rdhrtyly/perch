@@ -23,6 +23,9 @@ document.getElementById('toggleLink').addEventListener('click', (e) => {
   setMode(mode === 'login' ? 'signup' : 'login');
 });
 
+// Start in signup mode if we arrived from the "Sign up free" button.
+if (new URLSearchParams(location.search).has('signup')) setMode('signup');
+
 // If already logged in, skip straight to the dashboard.
 fetch('/api/auth/me').then((r) => { if (r.ok) location.href = '/'; });
 
