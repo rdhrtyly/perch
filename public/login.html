@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Perch</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap" style="max-width:420px">
+    <header class="masthead">
+      <div class="logo">🪺 Perch</div>
+      <h1 id="formTitle" style="font-size:38px">Welcome</h1>
+      <p class="subtitle" id="formSub">Log in to your sites.</p>
+    </header>
+
+    <form class="panel" id="authForm">
+      <div class="field" style="margin-bottom:14px">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="you@email.com" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+
+      <div id="error" class="avail-no" style="margin-top:14px;font-size:14px;display:none"></div>
+
+      <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;justify-content:center;margin-top:18px">Log in</button>
+
+      <p class="subtitle" style="font-size:14px;text-align:center;margin-top:18px">
+        <span id="toggleText">New here?</span>
+        <a href="#" id="toggleLink" style="color:var(--gold)">Create an account</a>
+      </p>
+    </form>
+  </main>
+
+  <script src="/login.js"></script>
+</body>
+</html>

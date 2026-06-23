@@ -13,6 +13,10 @@ const uploadName = document.getElementById('uploadName');
 const domainsSection = document.getElementById('domainsSection');
 const domainsBody = document.getElementById('domainsBody');
 
+const userbar = document.getElementById('userbar');
+const userEmail = document.getElementById('userEmail');
+const logoutBtn = document.getElementById('logoutBtn');
+
 let SITES = [];
 
 // Folders we never upload (huge / rebuildable). Perch installs & builds
@@ -59,7 +63,9 @@ function card(site) {
 }
 
 async function loadSites() {
-  SITES = await fetch('/api/sites').then(r => r.json());
+  const resp = await fetch('/api/sites');
+  if (resp.status === 401) { location.href = '/login.html'; return; }
+  SITES = await resp.json();
   sitesEl.innerHTML = SITES.length
     ? SITES.map(card).join('')
     : `<div class="empty">No sites yet — drag a folder up top to deploy your first one. 🚀</div>`;
@@ -245,7 +251,22 @@ async function buy(domain) {
   finally { btn.disabled = false; btn.textContent = 'Buy & connect'; }
 }
 
-// ── boot ──────────────────────────────────────────────────────────
-loadSites();
-initDomains();
-setInterval(loadSites, 5000);
+// ── auth + boot ───────────────────────────────────────────────────
+logoutBtn.addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  location.href = '/login.html';
+});
+
+async function boot() {
+  // Must be logged in — otherwise go to the login page.
+  const me = await fetch('/api/auth/me');
+  if (!me.ok) { location.href = '/login.html'; return; }
+  const user = await me.json();
+  userEmail.textContent = user.email;
+  userbar.style.display = 'flex';
+
+  loadSites();
+  initDomains();
+  setInterval(loadSites, 5000);
+}
+boot();

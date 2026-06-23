@@ -10,6 +10,7 @@ const store = require('./store');
 const deployer = require('./deployer');
 const caddy = require('./deployer/caddy');
 const stats = require('./stats');
+const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
 
@@ -66,8 +67,11 @@ app.get('/_perch/hit', (req, res) => {
   res.end(PIXEL);
 });
 
-// ── The dashboard's API ──────────────────────────────────────────
-app.use('/api', api);
+// ── Accounts (signup / login / logout) — public ──────────────────
+app.use('/api/auth', auth.router);
+
+// ── The dashboard's API — requires being logged in ───────────────
+app.use('/api', auth.requireAuth, api);
 
 // ── The dashboard + live status web pages ────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));

@@ -69,4 +69,29 @@ function removeSite(id) {
   writeAll(readAll().filter((s) => s.id !== id));
 }
 
-module.exports = { listSites, getSite, getSiteByRepo, upsertSite, updateSite, removeSite };
+// Only the sites that belong to one user.
+function listByUser(userId) {
+  return readAll().filter((s) => s.userId === userId);
+}
+
+// Give any owner-less sites (made before logins existed) to a user.
+function claimOwnerless(userId) {
+  const sites = readAll();
+  let changed = false;
+  for (const s of sites) if (!s.userId) { s.userId = userId; changed = true; }
+  if (changed) writeAll(sites);
+}
+
+// Make a site id (= subdomain) that no one else is using.
+function uniqueId(base) {
+  const ids = new Set(readAll().map((s) => s.id));
+  if (!ids.has(base)) return base;
+  let n = 2;
+  while (ids.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
+module.exports = {
+  listSites, getSite, getSiteByRepo, upsertSite, updateSite, removeSite,
+  listByUser, claimOwnerless, uniqueId,
+};

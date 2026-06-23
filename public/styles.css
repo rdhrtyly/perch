@@ -199,6 +199,10 @@ h1 {
 .back { color: var(--gold); text-decoration: none; font-size: 14px; }
 .back:hover { text-decoration: underline; color: var(--gold-bright); }
 
+/* User bar (top of dashboard) */
+.userbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-bottom: 8px; }
+.userbar .who { color: var(--muted); font-size: 13px; }
+
 /* Card name link */
 .namelink { color: var(--text); text-decoration: none; }
 .namelink:hover { color: var(--gold-bright); }

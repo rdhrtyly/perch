@@ -21,6 +21,10 @@ const config = {
   // This server's public IP — used by Phase 2 to point bought domains here.
   serverIp: process.env.SERVER_IP || '',
 
+  // Secret used to sign login cookies. If unset, Perch makes one and
+  // saves it to data/session.key so logins survive restarts.
+  sessionSecret: process.env.SESSION_SECRET || '',
+
   // Folders on disk
   dataDir: DATA_DIR,
   workspaceDir: path.join(DATA_DIR, 'workspace'), // git clones live here

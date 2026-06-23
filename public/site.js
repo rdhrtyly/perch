@@ -21,7 +21,9 @@ function timeAgo(ms) {
 let SITE = null;
 
 async function load() {
-  const sites = await fetch('/api/sites').then((r) => r.json());
+  const r = await fetch('/api/sites');
+  if (r.status === 401) { location.href = '/login.html'; return; }
+  const sites = await r.json();
   SITE = sites.find((s) => s.id === id);
   if (!SITE) { $('title').textContent = 'Site not found'; return; }
 

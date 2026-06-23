@@ -21,10 +21,16 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024, files: 5000 },
 });
 
+// Get a site only if it belongs to the logged-in user (else null).
+function ownedSite(req) {
+  const s = store.getSite(req.params.id);
+  return s && s.userId === req.userId ? s : null;
+}
+
 // ── Sites ─────────────────────────────────────────────────────────
 
 router.get('/sites', (req, res) => {
-  res.json(store.listSites());
+  res.json(store.listByUser(req.userId));
 });
 
 // Add a site from a GitHub repo.
@@ -32,10 +38,11 @@ router.post('/sites', (req, res) => {
   const { name, repo, branch, domain, domainSource } = req.body || {};
   if (!name || !repo) return res.status(400).json({ error: 'name and repo are required' });
 
-  const id = slugify(name);
+  const id = store.uniqueId(slugify(name));
   const finalDomain = domain || `${id}.${config.baseDomain}`;
   store.upsertSite({
     id, name, repo, branch: branch || 'main',
+    userId: req.userId,
     source: 'git',
     domain: finalDomain,
     domainSource: domainSource || 'manual', // PHASE 2: 'porkbun'
@@ -52,7 +59,7 @@ router.post('/upload', upload.any(), (req, res) => {
   if (!name) return res.status(400).json({ error: 'a name is required' });
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no files were uploaded' });
 
-  const id = slugify(name);
+  const id = store.uniqueId(slugify(name));
   const dest = path.join(config.workspaceDir, id);
 
   // Start clean, then write every uploaded file (keeping its folder layout).
@@ -74,6 +81,7 @@ router.post('/upload', upload.any(), (req, res) => {
   const domain = `${id}.${config.baseDomain}`;
   store.upsertSite({
     id, name, repo: null, branch: null,
+    userId: req.userId,
     source: 'upload',
     domain, domainSource: 'manual',
     type: null, port: null, status: 'new',
@@ -87,7 +95,7 @@ router.post('/upload', upload.any(), (req, res) => {
 
 // Redeploy a site.
 router.post('/sites/:id/deploy', (req, res) => {
-  const site = store.getSite(req.params.id);
+  const site = ownedSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
   deployer.deploy(site);
   res.status(202).json({ ok: true, deployId: store.getSite(site.id).lastDeployId });
@@ -95,13 +103,13 @@ router.post('/sites/:id/deploy', (req, res) => {
 
 // Visit stats for a site (for the per-site page).
 router.get('/sites/:id/stats', (req, res) => {
-  if (!store.getSite(req.params.id)) return res.status(404).json({ error: 'not found' });
+  if (!ownedSite(req)) return res.status(404).json({ error: 'not found' });
   res.json(stats.getStats(req.params.id));
 });
 
 // Delete a site: remove its files, container, stats, and Caddy entry.
 router.delete('/sites/:id', async (req, res) => {
-  const site = store.getSite(req.params.id);
+  const site = ownedSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
 
   if (site.type === 'nextjs') {
@@ -159,7 +167,8 @@ router.post('/domains/buy', async (req, res) => {
     // We ADD the custom domain (the site keeps its .useperch.dev address too).
     if (!dryRun) {
       await porkbun.pointDomainAtServer(domain, config.serverIp);
-      if (siteId && store.getSite(siteId)) {
+      const site = siteId ? store.getSite(siteId) : null;
+      if (site && site.userId === req.userId) {
         store.updateSite(siteId, { customDomain: domain, domainSource: 'porkbun' });
         await caddy.writeAndReload();
       }
