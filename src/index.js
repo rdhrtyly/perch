@@ -13,6 +13,7 @@ const stats = require('./stats');
 const uptime = require('./uptime');
 const notify = require('./notify');
 const tokens = require('./tokens');
+const mcp = require('./mcp');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -67,6 +68,10 @@ app.get('/_perch/hit', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.end(PIXEL);
 });
+
+// ── The Claude connector (MCP) — auth is the Bearer deploy token ──
+app.post('/mcp', mcp.handler);
+app.get('/mcp', (req, res) => res.status(405).json({ error: 'MCP endpoint — use POST' }));
 
 // ── Accounts (signup / login / logout) — public ──────────────────
 app.use('/api/auth', auth.router);
