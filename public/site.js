@@ -24,6 +24,7 @@ async function load() {
 
   renderHeader();
   renderUptime();
+  renderPreviews();
   renderPrivacy();
   renderShare();
   renderVersions();
@@ -126,6 +127,47 @@ function renderPrivacy() {
       if (r.ok) load(); else { alert('Could not protect'); $('protectBtn').disabled = false; $('protectBtn').textContent = 'Protect'; }
     });
   }
+}
+
+// ── Preview deploys ──────────────────────────────────────────────
+async function renderPreviews() {
+  const el = $('previewsPanel');
+  if (SITE.isPreview) {
+    el.innerHTML = `<span class="subtitle" style="font-size:13px">🌿 This is a preview of branch <code>${SITE.branch}</code>.</span>`;
+    return;
+  }
+  if (!SITE.repo) {
+    el.innerHTML = `<span class="subtitle" style="font-size:13px">Previews are for GitHub sites — deploy any branch to a test URL. (Uploaded sites don't have branches.)</span>`;
+    return;
+  }
+  const data = await fetch(`/api/sites/${id}/previews`).then((r) => (r.ok ? r.json() : { previews: [] }));
+  const list = (data.previews || []).length
+    ? data.previews.map((p) => `<div class="version-row">
+        <span>🌿 <b>${p.branch}</b> &nbsp;<a class="domain" href="${p.url}" target="_blank" rel="noopener">${p.domain} ↗</a></span>
+        <button class="btn btn-ghost btn-sm" data-delprev="${p.id}">Delete</button>
+      </div>`).join('')
+    : `<div class="subtitle" style="font-size:13px">No previews yet.</div>`;
+  el.innerHTML = `<p class="subtitle" style="font-size:13px;margin-top:0">Test a branch on its own URL before it hits your real site.</p>
+    <div class="inline-form">
+      <input id="prevBranch" class="inline-input" placeholder="branch name (e.g. new-design)" />
+      <button class="btn btn-primary" id="prevBtn">Create preview</button>
+    </div>
+    <div id="prevMsg" class="subtitle" style="font-size:12.5px;margin-top:8px"></div>
+    <div style="margin-top:14px">${list}</div>`;
+  $('prevBtn').addEventListener('click', async () => {
+    const branch = $('prevBranch').value.trim();
+    if (!branch) return;
+    $('prevBtn').disabled = true; $('prevBtn').textContent = 'Deploying…';
+    const r = await fetch(`/api/sites/${id}/preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ branch }) });
+    const d = await r.json();
+    if (r.ok && d.deployId) location.href = `/deploy.html?id=${d.deployId}`;
+    else { $('prevMsg').textContent = d.error || 'Failed'; $('prevBtn').disabled = false; $('prevBtn').textContent = 'Create preview'; }
+  });
+  el.querySelectorAll('[data-delprev]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm('Delete this preview?')) return;
+    await fetch(`/api/sites/${b.dataset.delprev}`, { method: 'DELETE' });
+    renderPreviews();
+  }));
 }
 
 // ── Share with a friend ──────────────────────────────────────────

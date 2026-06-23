@@ -52,16 +52,21 @@ function publicSite(s, userId) {
   };
 }
 
-// Is this user at their site limit? (Owners have no limit.)
+// Is this user at their site limit? (Owners have no limit; previews don't count.)
 function atLimit(req) {
   if (req.isAdmin) return false;
-  return store.listByUser(req.userId).length >= config.maxSitesPerUser;
+  return store.listByUser(req.userId).filter((s) => !s.isPreview).length >= config.maxSitesPerUser;
 }
 
 // ── Sites ─────────────────────────────────────────────────────────
 
+// Dashboard lists real sites only (previews live under their parent).
 router.get('/sites', (req, res) => {
-  res.json(store.listByUser(req.userId).map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) })));
+  res.json(
+    store.listByUser(req.userId)
+      .filter((s) => !s.isPreview)
+      .map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) }))
+  );
 });
 
 // Add a site from a GitHub repo.
@@ -196,15 +201,19 @@ router.delete('/sites/:id', async (req, res) => {
   const site = ownedSite(req); // only the owner can delete
   if (!site) return res.status(404).json({ error: 'not found' });
 
-  if (site.type === 'nextjs') {
-    try { execSync(`docker rm -f perch-${site.id}`, { stdio: 'ignore' }); } catch { /* ok */ }
+  // Remove the site AND any of its previews.
+  const toRemove = [site, ...store.listSites().filter((s) => s.parentId === site.id)];
+  for (const s of toRemove) {
+    if (s.type === 'nextjs') {
+      try { execSync(`docker rm -f perch-${s.id}`, { stdio: 'ignore' }); } catch { /* ok */ }
+    }
+    fs.rmSync(path.join(config.workspaceDir, s.id), { recursive: true, force: true });
+    fs.rmSync(path.join(config.sitesDir, s.id), { recursive: true, force: true });
+    fs.rmSync(path.join(config.versionsDir, s.id), { recursive: true, force: true });
+    store.removeSite(s.id);
+    stats.removeSite(s.id);
+    uptime.removeSite(s.id);
   }
-  fs.rmSync(path.join(config.workspaceDir, site.id), { recursive: true, force: true });
-  fs.rmSync(path.join(config.sitesDir, site.id), { recursive: true, force: true });
-  fs.rmSync(path.join(config.versionsDir, site.id), { recursive: true, force: true });
-  store.removeSite(site.id);
-  stats.removeSite(site.id);
-  uptime.removeSite(site.id);
   await caddy.writeAndReload();
   res.json({ ok: true });
 });
@@ -227,6 +236,43 @@ router.post('/sites/:id/env', (req, res) => {
   }
   store.updateSite(site.id, { env });
   res.json({ ok: true, env });
+});
+
+// ── Preview deploys (deploy a branch to a temporary URL) ─────────
+
+// List a site's previews.
+router.get('/sites/:id/previews', (req, res) => {
+  if (!accessibleSite(req)) return res.status(404).json({ error: 'not found' });
+  const previews = store.listSites()
+    .filter((s) => s.parentId === req.params.id)
+    .map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) }));
+  res.json({ previews });
+});
+
+// Create a preview of a branch → builds it at <branch>--<site>.<domain>.
+router.post('/sites/:id/preview', (req, res) => {
+  const parent = accessibleSite(req);
+  if (!parent) return res.status(404).json({ error: 'not found' });
+  if (parent.isPreview) return res.status(400).json({ error: "can't preview a preview" });
+  if (!parent.repo) return res.status(400).json({ error: 'previews are for GitHub sites only' });
+
+  const branch = String((req.body || {}).branch || '').trim();
+  const branchSlug = slugify(branch);
+  if (!branchSlug) return res.status(400).json({ error: 'enter a valid branch name' });
+
+  const id = store.uniqueId(`${branchSlug}--${parent.id}`);
+  const domain = `${id}.${config.baseDomain}`;
+  store.upsertSite({
+    id, name: `${parent.name} · ${branch}`, repo: parent.repo, branch,
+    userId: parent.userId,
+    source: 'git', isPreview: true, parentId: parent.id,
+    domain, domainSource: 'manual',
+    type: null, port: null, status: 'new',
+    lastDeployAt: null, lastDeployId: null,
+    url: `https://${domain}`,
+  });
+  deployer.deploy(store.getSite(id));
+  res.status(201).json({ ok: true, id, deployId: store.getSite(id).lastDeployId });
 });
 
 // ── Sharing (owner only) ─────────────────────────────────────────

@@ -42,18 +42,16 @@ app.post('/webhook', (req, res) => {
   const push = parsePush(req);
   if (!push) return res.status(204).end(); // not a push event — ignore
 
-  const site = store.getSiteByRepo(push.repo);
-  if (!site) {
-    return res.status(202).json({ ok: true, note: `no site for ${push.repo}` });
+  // Deploy every site (main OR preview) that tracks this repo + branch.
+  const matches = store.listSites().filter(
+    (s) => s.repo === push.repo && (s.branch || 'main') === push.branch
+  );
+  if (!matches.length) {
+    return res.status(202).json({ ok: true, note: `no site for ${push.repo}@${push.branch}` });
   }
 
-  // Only deploy when the branch we deploy actually changed.
-  if (site.branch && push.branch && site.branch !== push.branch) {
-    return res.status(202).json({ ok: true, note: `ignored branch ${push.branch}` });
-  }
-
-  deployer.deploy(site); // build in the background
-  res.status(202).json({ ok: true });
+  matches.forEach((s) => deployer.deploy(s)); // build in the background
+  res.status(202).json({ ok: true, deployed: matches.length });
 });
 
 // ── Analytics beacon ─────────────────────────────────────────────
@@ -75,7 +73,7 @@ app.use('/api/auth', auth.router);
 // ── Public status page data (no login) ───────────────────────────
 // Shows one user's sites + status. Keyed by their (unguessable) id.
 app.get('/api/public/status/:userId', (req, res) => {
-  const sites = store.listByUser(req.params.userId).map((s) => ({
+  const sites = store.listByUser(req.params.userId).filter((s) => !s.isPreview).map((s) => ({
     name: s.name,
     domain: s.customDomain || s.domain,
     url: s.url,
