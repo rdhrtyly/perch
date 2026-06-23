@@ -29,16 +29,28 @@ function ownedSite(req) {
   return s && s.userId === req.userId ? s : null;
 }
 
+// Strip secret fields before sending a site to the browser.
+function publicSite(s) {
+  const { authHash, env, ...rest } = s;
+  return rest;
+}
+
+// Is this user at their site limit?
+function atLimit(req) {
+  return store.listByUser(req.userId).length >= config.maxSitesPerUser;
+}
+
 // ── Sites ─────────────────────────────────────────────────────────
 
 router.get('/sites', (req, res) => {
-  res.json(store.listByUser(req.userId));
+  res.json(store.listByUser(req.userId).map(publicSite));
 });
 
 // Add a site from a GitHub repo.
 router.post('/sites', (req, res) => {
   const { name, repo, branch, domain, domainSource } = req.body || {};
   if (!name || !repo) return res.status(400).json({ error: 'name and repo are required' });
+  if (atLimit(req)) return res.status(403).json({ error: `You've hit the limit of ${config.maxSitesPerUser} sites.` });
 
   const id = store.uniqueId(slugify(name));
   const finalDomain = domain || `${id}.${config.baseDomain}`;
@@ -52,7 +64,7 @@ router.post('/sites', (req, res) => {
     lastDeployAt: null, lastDeployId: null,
     url: `https://${finalDomain}`,
   });
-  res.status(201).json(store.getSite(id));
+  res.status(201).json(publicSite(store.getSite(id)));
 });
 
 // Add a site by UPLOADING files (no GitHub needed) — the Vercel-style flow.
@@ -60,6 +72,7 @@ router.post('/upload', upload.any(), (req, res) => {
   const name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'a name is required' });
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no files were uploaded' });
+  if (atLimit(req)) return res.status(403).json({ error: `You've hit the limit of ${config.maxSitesPerUser} sites.` });
 
   const id = store.uniqueId(slugify(name));
   const dest = path.join(config.workspaceDir, id);
@@ -175,6 +188,26 @@ router.delete('/sites/:id', async (req, res) => {
   stats.removeSite(site.id);
   await caddy.writeAndReload();
   res.json({ ok: true });
+});
+
+// Get a site's secret env variables (owner only).
+router.get('/sites/:id/env', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  res.json({ env: site.env || {} });
+});
+
+// Set a site's secret env variables. (Redeploy to apply them.)
+router.post('/sites/:id/env', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const input = (req.body || {}).env || {};
+  const env = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) env[k] = String(v); // valid env-var names only
+  }
+  store.updateSite(site.id, { env });
+  res.json({ ok: true, env });
 });
 
 // ── Deploys / live logs ──────────────────────────────────────────

@@ -56,7 +56,7 @@ async function deploy(site) {
       await buildAndRunNext(deployId, repoDir, fresh);
     } else if (plan.type === 'static-build') {
       logs.log(deployId, 'Building in Docker...');
-      const builtDir = await buildStatic(deployId, repoDir, plan);
+      const builtDir = await buildStatic(deployId, repoDir, plan, store.getSite(site.id).env);
       publishStatic(deployId, site, builtDir);
     } else {
       logs.log(deployId, 'Static site — no build needed, publishing files...');

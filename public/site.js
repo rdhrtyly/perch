@@ -26,9 +26,21 @@ async function load() {
   renderPrivacy();
   renderVersions();
   await refreshStats();
+  loadEnv();
 
   const qr = $('qr');
   if (qr && !qr.src) qr.src = `/api/sites/${id}/qr`;
+}
+
+// Load the site's secret env vars into the textarea (once).
+let envLoaded = false;
+async function loadEnv() {
+  if (envLoaded) return;
+  const res = await fetch(`/api/sites/${id}/env`);
+  if (!res.ok) return;
+  const { env } = await res.json();
+  $('envBox').value = Object.entries(env || {}).map(([k, v]) => `${k}=${v}`).join('\n');
+  envLoaded = true;
 }
 
 function renderHeader() {
@@ -126,6 +138,21 @@ $('redeployBtn').addEventListener('click', async () => {
   const r = await fetch(`/api/sites/${id}/deploy`, { method: 'POST' });
   const d = await r.json();
   if (d.deployId) location.href = `/deploy.html?id=${d.deployId}`;
+});
+
+$('saveEnvBtn').addEventListener('click', async () => {
+  const env = {};
+  for (let line of $('envBox').value.split('\n')) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+  }
+  $('saveEnvBtn').disabled = true;
+  const r = await fetch(`/api/sites/${id}/env`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ env }) });
+  $('saveEnvBtn').disabled = false;
+  $('envMsg').textContent = r.ok ? '✓ Saved! Redeploy to apply.' : 'Save failed';
 });
 
 $('deleteBtn').addEventListener('click', async () => {

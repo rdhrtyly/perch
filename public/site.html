@@ -55,6 +55,16 @@
       <div class="panel" id="privacyPanel"></div>
     </section>
 
+    <!-- Environment variables (secret settings) -->
+    <section class="section">
+      <div class="section-head"><h2>Secret settings</h2></div>
+      <div class="panel">
+        <p class="subtitle" style="font-size:13px;margin-top:0">One per line, like <code>VITE_API_KEY=abc123</code>. Kept private on your server. <b>Redeploy</b> after saving to apply them.</p>
+        <textarea id="envBox" class="envbox" placeholder="KEY=value&#10;ANOTHER_KEY=value" spellcheck="false"></textarea>
+        <div style="margin-top:12px"><button class="btn btn-primary" id="saveEnvBtn">Save settings</button> <span id="envMsg" class="subtitle" style="font-size:13px"></span></div>
+      </div>
+    </section>
+
     <!-- Versions (rollback) -->
     <section class="section">
       <div class="section-head"><h2>Versions</h2></div>

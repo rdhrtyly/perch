@@ -25,6 +25,9 @@ const config = {
   // saves it to data/session.key so logins survive restarts.
   sessionSecret: process.env.SESSION_SECRET || '',
 
+  // Most sites a single account can have (stops one person filling the server).
+  maxSitesPerUser: Number(process.env.MAX_SITES_PER_USER) || 10,
+
   // Folders on disk
   dataDir: DATA_DIR,
   workspaceDir: path.join(DATA_DIR, 'workspace'), // git clones live here

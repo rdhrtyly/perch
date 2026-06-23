@@ -129,7 +129,7 @@ router.post('/logout', (req, res) => { res.clearCookie(COOKIE, { path: '/' }); r
 router.get('/me', (req, res) => {
   const user = getUser(getUserId(req));
   if (!user) return res.status(401).json({ error: 'not logged in' });
-  res.json({ id: user.id, email: user.email });
+  res.json({ id: user.id, email: user.email, maxSites: config.maxSitesPerUser });
 });
 
 module.exports = { router, requireAuth, getUserId };

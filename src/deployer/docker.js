@@ -30,9 +30,16 @@ function run(deployId, command, args, options = {}) {
   });
 }
 
+// Turn a site's { KEY: value } env into docker "-e KEY=value" flags.
+function envFlags(env) {
+  const flags = [];
+  for (const [k, v] of Object.entries(env || {})) flags.push('-e', `${k}=${v}`);
+  return flags;
+}
+
 // Build a static / React project inside a clean Node container.
 // Returns the folder that holds the finished files.
-async function buildStatic(deployId, repoDir, plan) {
+async function buildStatic(deployId, repoDir, plan, env) {
   // Install dependencies, then run the build — all inside node:20-alpine
   // (a small, fast Linux image with Node already on it).
   const install = 'if [ -f package-lock.json ]; then npm ci; else npm install; fi';
@@ -40,6 +47,7 @@ async function buildStatic(deployId, repoDir, plan) {
 
   await run(deployId, 'docker', [
     'run', '--rm',
+    ...envFlags(env),               // the site's secret settings (e.g. VITE_*)
     '-v', `${repoDir}:/app`,
     '-w', '/app',
     'node:20-alpine',
@@ -74,6 +82,7 @@ async function buildAndRunNext(deployId, repoDir, site) {
     'run', '-d',
     '--name', containerName,
     '--restart', 'unless-stopped',
+    ...envFlags(site.env),          // the site's secret settings, at runtime
     '-p', `127.0.0.1:${site.port}:3000`,
     image,
   ]);
