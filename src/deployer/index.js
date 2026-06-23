@@ -8,6 +8,7 @@ const path = require('path');
 const config = require('../config');
 const store = require('../store');
 const logs = require('../logs/stream');
+const notify = require('../notify');
 const { run, buildStatic, buildAndRunNext } = require('./docker');
 const { detect } = require('./detect');
 const caddy = require('./caddy');
@@ -73,6 +74,7 @@ async function deploy(site) {
   } catch (err) {
     logs.log(deployId, `Deploy FAILED: ${err.message}`);
     store.updateSite(site.id, { status: 'failed' });
+    notify.add(site.userId, { type: 'deploy-failed', message: `"${site.name}" failed to deploy`, siteId: site.id });
     logs.finish(deployId, 'failed');
   }
 }

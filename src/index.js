@@ -11,6 +11,7 @@ const deployer = require('./deployer');
 const caddy = require('./deployer/caddy');
 const stats = require('./stats');
 const uptime = require('./uptime');
+const notify = require('./notify');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -103,6 +104,10 @@ stats.startAutoFlush();
 // Start the uptime monitor (pings live sites every minute).
 uptime.load();
 uptime.startMonitor();
+
+// Load notifications (the 🔔 bell).
+notify.load();
+notify.startAutoFlush();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.

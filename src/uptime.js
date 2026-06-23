@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const store = require('./store');
+const notify = require('./notify');
 
 const FILE = path.join(config.dataDir, 'uptime.json');
 const KEEP = 50; // how many recent checks we remember per site
@@ -57,8 +58,12 @@ async function ping(url) {
 async function checkAll() {
   const sites = store.listSites().filter((s) => s.status === 'live' && s.domain);
   for (const s of sites) {
+    const prev = (data[s.id] || {}).up;
     const up = await ping('https://' + (s.customDomain || s.domain));
     record(s.id, up);
+    // Notify the owner when a site changes state.
+    if (prev === true && up === false) notify.add(s.userId, { type: 'down', message: `"${s.name}" went down`, siteId: s.id });
+    else if (prev === false && up === true) notify.add(s.userId, { type: 'up', message: `"${s.name}" is back up`, siteId: s.id });
   }
 }
 

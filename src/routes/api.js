@@ -12,6 +12,7 @@ const caddy = require('../deployer/caddy');
 const porkbun = require('../domains/porkbun');
 const stats = require('../stats');
 const uptime = require('../uptime');
+const notify = require('../notify');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const auth = require('../auth');
@@ -263,6 +264,11 @@ router.post('/sites/:id/unshare', (req, res) => {
   store.updateSite(site.id, { collaborators: (site.collaborators || []).filter((u) => u !== userId) });
   res.json({ ok: true });
 });
+
+// ── Notifications (the 🔔 bell) ──────────────────────────────────
+router.get('/notifications', (req, res) => res.json(notify.listFor(req.userId)));
+router.post('/notifications/read', (req, res) => { notify.markReadAll(req.userId); res.json({ ok: true }); });
+router.post('/notifications/clear', (req, res) => { notify.clear(req.userId); res.json({ ok: true }); });
 
 // ── Deploys / live logs ──────────────────────────────────────────
 

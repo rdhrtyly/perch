@@ -16,6 +16,9 @@ const domainsBody = document.getElementById('domainsBody');
 const userbar = document.getElementById('userbar');
 const userEmail = document.getElementById('userEmail');
 const logoutBtn = document.getElementById('logoutBtn');
+const bellBtn = document.getElementById('bellBtn');
+const bellCount = document.getElementById('bellCount');
+const notifPanel = document.getElementById('notifPanel');
 
 let SITES = [];
 let LIMIT = 10;
@@ -257,6 +260,37 @@ async function buy(domain) {
   finally { btn.disabled = false; btn.textContent = 'Buy & connect'; }
 }
 
+// ── notifications (🔔) ────────────────────────────────────────────
+let NOTIFS = [];
+async function loadNotifications() {
+  const data = await fetch('/api/notifications').then((r) => (r.ok ? r.json() : { items: [], unread: 0 })).catch(() => ({ items: [], unread: 0 }));
+  NOTIFS = data.items || [];
+  if (data.unread > 0) { bellCount.textContent = data.unread; bellCount.style.display = ''; }
+  else bellCount.style.display = 'none';
+}
+function notifIcon(t) { return t === 'deploy-failed' ? '❌' : t === 'down' ? '🔴' : t === 'up' ? '🟢' : '🔔'; }
+function renderNotifPanel() {
+  if (!NOTIFS.length) { notifPanel.innerHTML = `<div class="notif-empty">No notifications yet 🎉</div>`; return; }
+  notifPanel.innerHTML = NOTIFS.map((n) =>
+    `<div class="notif-item">${notifIcon(n.type)} ${n.message}<span class="notif-time">${timeAgo(n.at)}</span></div>`).join('') +
+    `<button class="btn btn-ghost btn-sm" id="clearNotifs">Clear all</button>`;
+  document.getElementById('clearNotifs').addEventListener('click', async () => {
+    await fetch('/api/notifications/clear', { method: 'POST' });
+    NOTIFS = []; renderNotifPanel(); loadNotifications();
+  });
+}
+bellBtn.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  if (notifPanel.style.display === 'block') { notifPanel.style.display = 'none'; return; }
+  renderNotifPanel();
+  notifPanel.style.display = 'block';
+  await fetch('/api/notifications/read', { method: 'POST' });
+  bellCount.style.display = 'none';
+});
+document.addEventListener('click', (e) => {
+  if (notifPanel.style.display === 'block' && !notifPanel.contains(e.target) && !bellBtn.contains(e.target)) notifPanel.style.display = 'none';
+});
+
 // ── auth + boot ───────────────────────────────────────────────────
 logoutBtn.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
@@ -275,7 +309,8 @@ async function boot() {
   userbar.style.display = 'flex';
 
   loadSites();
+  loadNotifications();
   initDomains();
-  setInterval(loadSites, 5000);
+  setInterval(() => { loadSites(); loadNotifications(); }, 5000);
 }
 boot();
