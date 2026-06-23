@@ -69,7 +69,8 @@ async function loadSites() {
   if (resp.status === 401) { location.href = '/login.html'; return; }
   SITES = await resp.json();
   const sc = document.getElementById('siteCount');
-  if (sc) sc.textContent = UNLIMITED ? `${SITES.length} sites · unlimited ⭐` : `${SITES.length} / ${LIMIT} sites`;
+  // Owners just see a plain count (no badge) so nothing stands out.
+  if (sc) sc.textContent = UNLIMITED ? `${SITES.length} sites` : `${SITES.length} / ${LIMIT} sites`;
   sitesEl.innerHTML = SITES.length
     ? SITES.map(card).join('')
     : `<div class="empty">No sites yet — drag a folder up top to deploy your first one. 🚀</div>`;
