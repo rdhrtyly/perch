@@ -18,6 +18,9 @@ const config = {
   acmeEmail: process.env.ACME_EMAIL || '',
   githubToken: process.env.GITHUB_TOKEN || '',
 
+  // This server's public IP — used by Phase 2 to point bought domains here.
+  serverIp: process.env.SERVER_IP || '',
+
   // Folders on disk
   dataDir: DATA_DIR,
   workspaceDir: path.join(DATA_DIR, 'workspace'), // git clones live here

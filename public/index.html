@@ -10,26 +10,34 @@
   <main class="wrap">
     <header class="masthead">
       <div class="logo">🪺 Perch</div>
-      <h1>Your sites</h1>
-      <p class="subtitle">Push to GitHub. Watch it go live.</p>
+      <h1>Deploy anything</h1>
+      <p class="subtitle">Drag in a folder, or push to GitHub. It goes live with HTTPS.</p>
     </header>
 
-    <div class="row">
-      <h2>Projects</h2>
-      <button class="btn btn-primary" id="addToggle">+ Add site</button>
+    <!-- THE STAR: drag-and-drop upload (no GitHub needed) -->
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📦</div>
+      <p class="big">Drag your site's folder here</p>
+      <p class="small">Plain HTML goes live instantly. React/Vite gets built for you.</p>
+      <div class="controls">
+        <input type="text" id="uploadName" placeholder="site name" />
+        <button class="btn btn-primary" id="chooseFolder">Choose folder</button>
+        <button class="btn btn-quiet" id="toggleGithub">or add from GitHub →</button>
+      </div>
+      <input type="file" id="folderInput" class="hidden-file" webkitdirectory directory multiple />
     </div>
 
-    <!-- Add a site -->
-    <form class="addform" id="addForm">
+    <!-- Secondary: add from a GitHub repo -->
+    <form class="addform" id="addForm" style="margin-top:16px">
       <div class="fields">
         <div class="field">
           <label for="name">Project name</label>
           <input id="name" name="name" placeholder="Forkful" required />
-          <span class="hint">Becomes the subdomain, e.g. forkful.yourdomain</span>
+          <span class="hint">Becomes forkful.useperch.dev</span>
         </div>
         <div class="field">
           <label for="repo">GitHub repo</label>
-          <input id="repo" name="repo" placeholder="yourname/forkful" required />
+          <input id="repo" name="repo" placeholder="rdhrtyly/forkful" required />
           <span class="hint">In the form owner/repo</span>
         </div>
         <div class="field full">
@@ -43,8 +51,22 @@
       </div>
     </form>
 
-    <!-- The list of sites gets drawn here -->
-    <div class="sites" id="sites"></div>
+    <!-- Sites -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Your sites</h2>
+      </div>
+      <div class="sites" id="sites"></div>
+    </section>
+
+    <!-- Domains (Phase 2 — Porkbun) -->
+    <section class="section" id="domainsSection" style="display:none">
+      <div class="section-head">
+        <h2>Buy a domain</h2>
+        <span class="subtitle" style="font-size:13px">powered by Porkbun</span>
+      </div>
+      <div id="domainsBody"></div>
+    </section>
   </main>
 
   <script src="/app.js"></script>

@@ -31,10 +31,17 @@ async function deploy(site) {
   const repoDir = path.join(config.workspaceDir, site.id);
 
   try {
-    logs.log(deployId, `Starting deploy of "${site.name}"  (${site.repo})`);
+    const from = site.source === 'upload' ? 'uploaded files' : site.repo;
+    logs.log(deployId, `Starting deploy of "${site.name}"  (${from})`);
 
-    // 1) Get the latest code.
-    await getCode(deployId, site, repoDir);
+    // 1) Get the code.
+    if (site.source === 'upload') {
+      // Files were already saved to the workspace by the upload step —
+      // nothing to clone.
+      logs.log(deployId, 'Using uploaded files (no GitHub needed).');
+    } else {
+      await getCode(deployId, site, repoDir);
+    }
 
     // 2) Work out what kind of project this is.
     const plan = detect(repoDir);
