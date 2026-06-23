@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deploy · Perch</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead">
+      <a class="back" href="/">← All sites</a>
+      <h1 style="margin-top:14px" id="title">Deploying…</h1>
+    </header>
+
+    <div class="statusbar">
+      <span id="status" class="pill building"><span class="dot"></span>Building</span>
+      <span class="subtitle" id="elapsed"></span>
+    </div>
+
+    <div class="terminal" id="log"></div>
+  </main>
+
+  <script src="/deploy.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Never commit installed packages or secrets
+node_modules/
+.env
+
+# Runtime stuff Perch creates on the server (clones, built sites, etc.)
+data/*
+!data/.gitkeep
+
+*.log

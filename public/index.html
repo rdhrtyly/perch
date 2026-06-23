@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Perch</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead">
+      <div class="logo">🪺 Perch</div>
+      <h1>Your sites</h1>
+      <p class="subtitle">Push to GitHub. Watch it go live.</p>
+    </header>
+
+    <div class="row">
+      <h2>Projects</h2>
+      <button class="btn btn-primary" id="addToggle">+ Add site</button>
+    </div>
+
+    <!-- Add a site -->
+    <form class="addform" id="addForm">
+      <div class="fields">
+        <div class="field">
+          <label for="name">Project name</label>
+          <input id="name" name="name" placeholder="Forkful" required />
+          <span class="hint">Becomes the subdomain, e.g. forkful.yourdomain</span>
+        </div>
+        <div class="field">
+          <label for="repo">GitHub repo</label>
+          <input id="repo" name="repo" placeholder="yourname/forkful" required />
+          <span class="hint">In the form owner/repo</span>
+        </div>
+        <div class="field full">
+          <label for="branch">Branch (optional)</label>
+          <input id="branch" name="branch" placeholder="main" />
+        </div>
+      </div>
+      <div class="submit-row">
+        <button type="submit" class="btn btn-primary">Add site</button>
+        <button type="button" class="btn btn-ghost" id="addCancel">Cancel</button>
+      </div>
+    </form>
+
+    <!-- The list of sites gets drawn here -->
+    <div class="sites" id="sites"></div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

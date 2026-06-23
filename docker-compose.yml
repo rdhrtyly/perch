@@ -1,0 +1,20 @@
+# Runs Caddy (the "Doorman"): gives every site its own web address and
+# automatic HTTPS. We use the host network so Caddy can (a) grab ports
+# 80/443 for the web, and (b) reach your apps at localhost:<port>.
+#
+# Start it with:   docker compose up -d
+services:
+  caddy:
+    image: caddy:2
+    container_name: perch-caddy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data/Caddyfile:/etc/caddy/Caddyfile  # the config Perch generates
+      - ./data/sites:/srv/sites                # the static files to serve
+      - caddy_data:/data                       # stores your HTTPS certificates
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
