@@ -154,4 +154,11 @@ function getUserById(id) {
   return getUser(id);
 }
 
-module.exports = { router, requireAuth, getUserId, findUserByEmail, getUserById };
+// Check an email + password (for the OAuth login page). Returns user or null.
+function checkLogin(email, password) {
+  const user = findByEmail(String(email || '').trim().toLowerCase());
+  if (!user || !verifyPassword(String(password || ''), user.password)) return null;
+  return user;
+}
+
+module.exports = { router, requireAuth, getUserId, findUserByEmail, getUserById, checkLogin };

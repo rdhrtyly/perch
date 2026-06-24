@@ -13,6 +13,7 @@ const stats = require('./stats');
 const uptime = require('./uptime');
 const notify = require('./notify');
 const tokens = require('./tokens');
+const oauth = require('./oauth');
 const mcp = require('./mcp');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
@@ -32,6 +33,8 @@ app.use(
     },
   })
 );
+// OAuth login + token endpoints post form data.
+app.use(express.urlencoded({ extended: false }));
 
 // ── The webhook: GitHub knocks here when you push ────────────────
 app.post('/webhook', (req, res) => {
@@ -69,9 +72,115 @@ app.get('/_perch/hit', (req, res) => {
   res.end(PIXEL);
 });
 
-// ── The Claude connector (MCP) — auth is the Bearer deploy token ──
+// ── The Claude connector (MCP) + OAuth login ─────────────────────
+// Browser-based Claude clients call these cross-origin, so allow CORS.
+function cors(req, res, next) {
+  res.set('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Mcp-Session-Id, Mcp-Protocol-Version, Last-Event-ID');
+  res.set('Access-Control-Expose-Headers', 'WWW-Authenticate, Mcp-Session-Id');
+  res.set('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+}
+app.use(['/mcp', '/oauth', '/.well-known'], cors);
+
+const oauthBase = (req) => (config.dashboardDomain ? `https://${config.dashboardDomain}` : `${req.protocol}://${req.get('host')}`);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// The MCP endpoint itself.
 app.post('/mcp', mcp.handler);
 app.get('/mcp', (req, res) => res.status(405).json({ error: 'MCP endpoint — use POST' }));
+
+// ── OAuth discovery metadata ─────────────────────────────────────
+function protectedResource(req, res) {
+  const b = oauthBase(req);
+  res.json({ resource: `${b}/mcp`, authorization_servers: [b] });
+}
+app.get('/.well-known/oauth-protected-resource', protectedResource);
+app.get('/.well-known/oauth-protected-resource/mcp', protectedResource);
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+  const b = oauthBase(req);
+  res.json({
+    issuer: b,
+    authorization_endpoint: `${b}/oauth/authorize`,
+    token_endpoint: `${b}/oauth/token`,
+    registration_endpoint: `${b}/oauth/register`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none'],
+  });
+});
+
+// ── OAuth: dynamic client registration ───────────────────────────
+app.post('/oauth/register', (req, res) => {
+  const c = oauth.registerClient(req.body || {});
+  res.status(201).json({
+    client_id: c.client_id, redirect_uris: c.redirect_uris, client_name: c.client_name,
+    token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
+  });
+});
+
+// ── OAuth: the login + consent page ──────────────────────────────
+function renderAuthorize(p, error) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Authorize · Perch</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="wrap" style="max-width:420px">
+  <header class="masthead"><div class="logo">🪺 Perch</div><h1 style="font-size:34px">Authorize</h1>
+  <p class="subtitle">Let <b>${esc(p.client_name || 'this app')}</b> deploy to your Perch? Log in to allow it.</p></header>
+  <form class="panel" method="POST" action="/oauth/authorize">
+    <div class="field" style="margin-bottom:14px"><label>Email</label><input name="email" type="email" autocomplete="email" required></div>
+    <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+    ${error ? `<div class="avail-no" style="margin-top:12px;font-size:14px">${esc(error)}</div>` : ''}
+    <input type="hidden" name="client_id" value="${esc(p.client_id)}">
+    <input type="hidden" name="redirect_uri" value="${esc(p.redirect_uri)}">
+    <input type="hidden" name="code_challenge" value="${esc(p.code_challenge)}">
+    <input type="hidden" name="state" value="${esc(p.state)}">
+    <button class="btn btn-primary" type="submit" style="width:100%;justify-content:center;margin-top:18px">Log in &amp; authorize</button>
+  </form>
+  <p class="subtitle" style="font-size:13px;text-align:center;margin-top:16px">Only approve apps you trust.</p>
+</main></body></html>`;
+}
+
+app.get('/oauth/authorize', (req, res) => {
+  const { response_type, client_id, redirect_uri, code_challenge, code_challenge_method, state } = req.query;
+  const client = oauth.getClient(String(client_id || ''));
+  if (response_type !== 'code') return res.status(400).send('unsupported response_type');
+  if (!client) return res.status(400).send('unknown client');
+  if (!client.redirect_uris.includes(String(redirect_uri))) return res.status(400).send('invalid redirect_uri');
+  if (!code_challenge || code_challenge_method !== 'S256') return res.status(400).send('PKCE (S256) required');
+  res.send(renderAuthorize({ client_id, redirect_uri, code_challenge, state, client_name: client.client_name }, null));
+});
+
+app.post('/oauth/authorize', (req, res) => {
+  const { email, password, client_id, redirect_uri, code_challenge, state } = req.body || {};
+  const client = oauth.getClient(String(client_id || ''));
+  if (!client || !client.redirect_uris.includes(String(redirect_uri))) return res.status(400).send('invalid client/redirect');
+  const user = auth.checkLogin(email, password);
+  if (!user) return res.status(401).send(renderAuthorize({ client_id, redirect_uri, code_challenge, state, client_name: client.client_name }, 'Wrong email or password'));
+  const code = oauth.createCode({ userId: user.id, clientId: client_id, redirectUri: redirect_uri, codeChallenge: code_challenge });
+  const sep = String(redirect_uri).includes('?') ? '&' : '?';
+  res.redirect(302, `${redirect_uri}${sep}code=${encodeURIComponent(code)}${state ? `&state=${encodeURIComponent(state)}` : ''}`);
+});
+
+// ── OAuth: token endpoint ────────────────────────────────────────
+app.post('/oauth/token', (req, res) => {
+  const grant = (req.body || {}).grant_type;
+  if (grant === 'authorization_code') {
+    const { code, redirect_uri, client_id, code_verifier } = req.body;
+    const c = oauth.consumeCode(String(code || ''));
+    if (!c || c.clientId !== client_id || c.redirectUri !== redirect_uri) return res.status(400).json({ error: 'invalid_grant' });
+    if (!oauth.pkceOk(String(code_verifier || ''), c.codeChallenge)) return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE check failed' });
+    const t = oauth.issueTokens(c.userId);
+    return res.json({ access_token: t.access, token_type: 'Bearer', expires_in: t.expiresIn, refresh_token: t.refresh });
+  }
+  if (grant === 'refresh_token') {
+    const t = oauth.refreshTokens(String((req.body || {}).refresh_token || ''));
+    if (!t) return res.status(400).json({ error: 'invalid_grant' });
+    return res.json({ access_token: t.access, token_type: 'Bearer', expires_in: t.expiresIn, refresh_token: t.refresh });
+  }
+  return res.status(400).json({ error: 'unsupported_grant_type' });
+});
 
 // ── Accounts (signup / login / logout) — public ──────────────────
 app.use('/api/auth', auth.router);
@@ -116,6 +225,10 @@ notify.startAutoFlush();
 // Load deploy tokens (for the Claude connector).
 tokens.load();
 tokens.startAutoFlush();
+
+// Load OAuth state (for the desktop/Cowork connector).
+oauth.load();
+oauth.startAutoFlush();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.

@@ -10,6 +10,7 @@ const config = require('./config');
 const store = require('./store');
 const deployer = require('./deployer');
 const tokens = require('./tokens');
+const oauth = require('./oauth');
 
 function slugify(s) {
   return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -128,10 +129,22 @@ async function handleOne(m, userId) {
   return { jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found: ' + method } };
 }
 
+function baseUrl(req) {
+  return config.dashboardDomain ? `https://${config.dashboardDomain}` : `${req.protocol}://${req.get('host')}`;
+}
+
 // Express handler for POST /mcp.
 async function handler(req, res) {
   const match = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
-  const userId = match ? tokens.verify(match[1].trim()) : null;
+  const token = match ? match[1].trim() : '';
+  // Accept either an OAuth access token (desktop/Cowork) or a deploy token (CLI).
+  const userId = token ? (oauth.verifyAccessToken(token) || tokens.verify(token)) : null;
+
+  // No valid token → 401 with a pointer to our OAuth metadata (kicks off login).
+  if (!userId) {
+    res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`);
+    return res.status(401).json({ jsonrpc: '2.0', id: (req.body && req.body.id) || null, error: { code: -32001, message: 'Unauthorized' } });
+  }
 
   try {
     const body = req.body;
