@@ -49,6 +49,10 @@ function revoke(id, userId) {
   data = data.filter((t) => !(t.id === id && t.userId === userId));
   if (data.length !== before) { dirty = true; flush(); }
 }
+function revokeAllForUser(userId) {
+  data = data.filter((t) => t.userId !== userId);
+  dirty = true; flush();
+}
 function startAutoFlush() { setInterval(flush, 15000).unref?.(); }
 
-module.exports = { load, flush, generate, verify, listFor, revoke, startAutoFlush };
+module.exports = { load, flush, generate, verify, listFor, revoke, revokeAllForUser, startAutoFlush };

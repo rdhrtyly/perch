@@ -256,6 +256,19 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color
 .token-reveal { margin-top: 14px; padding: 14px; background: var(--gold-soft); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--text); }
 .token-reveal code { display: inline-block; margin-top: 6px; word-break: break-all; background: var(--surface-2); padding: 6px 8px; border-radius: 6px; }
 
+/* Announcement banner */
+.announce { background: var(--gold-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 16px; color: var(--text); font-size: 14px; }
+
+/* Owner Panel */
+.adm-title { font-weight: 600; margin-bottom: 12px; font-size: 15px; }
+.adm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; flex-wrap: wrap; }
+.adm-row:last-child { border-bottom: none; }
+.adm-user { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
+.adm-user:last-child { border-bottom: none; }
+.adm-uinfo { min-width: 180px; }
+.adm-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.adm-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* Notification bell */
 .bell-wrap { position: relative; }
 .bell-count { background: var(--failed); color: #fff; border-radius: 999px; font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px; }

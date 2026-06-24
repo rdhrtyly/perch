@@ -15,6 +15,8 @@ const notify = require('./notify');
 const tokens = require('./tokens');
 const oauth = require('./oauth');
 const mcp = require('./mcp');
+const settings = require('./settings');
+const activity = require('./activity');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -205,6 +207,17 @@ app.get('/api/public/status/:userId', (req, res) => {
   res.json({ sites });
 });
 
+// Public info for the landing/login pages (announcement, signups, maintenance).
+app.get('/api/public/info', (req, res) => {
+  const s = settings.get();
+  res.json({ announcement: s.announcement, signupsOpen: s.signupsOpen, maintenance: s.maintenance });
+});
+
+// Featured sites (owner-picked) for the public homepage.
+app.get('/api/public/featured', (req, res) => {
+  res.json({ sites: store.listSites().filter((s) => s.featured && !s.isPreview).map((s) => ({ name: s.name, url: s.url })) });
+});
+
 // ── The dashboard's API — requires being logged in ───────────────
 app.use('/api', auth.requireAuth, api);
 
@@ -235,6 +248,11 @@ tokens.startAutoFlush();
 // Load OAuth state (for the desktop/Cowork connector).
 oauth.load();
 oauth.startAutoFlush();
+
+// Load owner-panel state (settings + activity log).
+settings.load();
+activity.load();
+activity.startAutoFlush();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.

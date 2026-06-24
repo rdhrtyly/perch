@@ -8,6 +8,7 @@
 </head>
 <body>
   <main class="wrap">
+    <div class="announce" id="announce" style="display:none"></div>
     <div class="userbar" id="userbar" style="display:none">
       <span class="who" id="userEmail"></span>
       <div class="bell-wrap">
@@ -86,8 +87,17 @@
       </div>
       <div class="panel" id="tokensPanel"></div>
     </section>
+
+    <!-- Owner Panel (admins only) -->
+    <section class="section" id="ownerSection" style="display:none">
+      <div class="section-head"><h2>👑 Owner Panel</h2><span class="subtitle" id="ownerStats" style="font-size:13px"></span></div>
+      <div class="panel" id="ownerServer"></div>
+      <div class="panel" id="ownerUsers" style="margin-top:14px"></div>
+      <div class="panel" id="ownerExtra" style="margin-top:14px"></div>
+    </section>
   </main>
 
   <script src="/app.js"></script>
+  <script src="/admin.js"></script>
 </body>
 </html>

@@ -333,6 +333,11 @@ async function boot() {
   document.getElementById('statusLink').href = '/status.html?u=' + user.id;
   userbar.style.display = 'flex';
 
+  // Announcement banner
+  if (user.announcement) { const a = document.getElementById('announce'); a.textContent = '📢 ' + user.announcement; a.style.display = 'block'; }
+  // Owner Panel (admins only)
+  if (user.admin && window.initOwnerPanel) { document.getElementById('ownerSection').style.display = ''; window.initOwnerPanel(); }
+
   loadSites();
   loadNotifications();
   loadTokens();

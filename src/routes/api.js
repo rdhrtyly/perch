@@ -14,6 +14,8 @@ const stats = require('../stats');
 const uptime = require('../uptime');
 const notify = require('../notify');
 const tokens = require('../tokens');
+const settings = require('../settings');
+const activity = require('../activity');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const auth = require('../auth');
@@ -53,10 +55,36 @@ function publicSite(s, userId) {
   };
 }
 
-// Is this user at their site limit? (Owners have no limit; previews don't count.)
+// Is this user at their site limit? (Owners/overrides handled by effectiveLimit; previews don't count.)
 function atLimit(req) {
-  if (req.isAdmin) return false;
-  return store.listByUser(req.userId).filter((s) => !s.isPreview).length >= config.maxSitesPerUser;
+  const limit = auth.effectiveLimit(req.user);
+  if (!Number.isFinite(limit)) return false;
+  return store.listByUser(req.userId).filter((s) => !s.isPreview).length >= limit;
+}
+
+// Remove a single site's files, container, and records.
+function removeSiteArtifacts(s) {
+  if (s.type === 'nextjs') { try { execSync(`docker rm -f perch-${s.id}`, { stdio: 'ignore' }); } catch { /* ok */ } }
+  for (const dir of [config.workspaceDir, config.sitesDir, config.versionsDir]) {
+    fs.rmSync(path.join(dir, s.id), { recursive: true, force: true });
+  }
+  store.removeSite(s.id); stats.removeSite(s.id); uptime.removeSite(s.id);
+}
+// Remove a site AND its previews.
+function removeSiteCascade(site) {
+  [site, ...store.listSites().filter((s) => s.parentId === site.id)].forEach(removeSiteArtifacts);
+}
+
+// Folder size in bytes (for storage stats).
+function dirSize(dir) {
+  let total = 0;
+  try {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      total += e.isDirectory() ? dirSize(p) : (fs.statSync(p).size || 0);
+    }
+  } catch { /* missing dir */ }
+  return total;
 }
 
 // ── Sites ─────────────────────────────────────────────────────────
@@ -201,20 +229,9 @@ router.get('/sites/:id/qr', async (req, res) => {
 router.delete('/sites/:id', async (req, res) => {
   const site = ownedSite(req); // only the owner can delete
   if (!site) return res.status(404).json({ error: 'not found' });
-
-  // Remove the site AND any of its previews.
-  const toRemove = [site, ...store.listSites().filter((s) => s.parentId === site.id)];
-  for (const s of toRemove) {
-    if (s.type === 'nextjs') {
-      try { execSync(`docker rm -f perch-${s.id}`, { stdio: 'ignore' }); } catch { /* ok */ }
-    }
-    fs.rmSync(path.join(config.workspaceDir, s.id), { recursive: true, force: true });
-    fs.rmSync(path.join(config.sitesDir, s.id), { recursive: true, force: true });
-    fs.rmSync(path.join(config.versionsDir, s.id), { recursive: true, force: true });
-    store.removeSite(s.id);
-    stats.removeSite(s.id);
-    uptime.removeSite(s.id);
-  }
+  if (site.locked) return res.status(403).json({ error: 'This site is locked by the owner and can’t be deleted.' });
+  removeSiteCascade(site);
+  activity.log('delete', `deleted "${site.name}"`);
   await caddy.writeAndReload();
   res.json({ ok: true });
 });
@@ -379,6 +396,131 @@ router.post('/domains/buy', async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
+});
+
+// ════════════════════════════════════════════════════════════════
+//  OWNER PANEL — every route below is owner-only (Lucas gets 403).
+// ════════════════════════════════════════════════════════════════
+router.use('/admin', auth.requireAdmin);
+
+function userSummary(u) {
+  const sites = store.listSites().filter((s) => s.userId === u.id);
+  let bytes = 0;
+  for (const s of sites) bytes += dirSize(path.join(config.sitesDir, s.id));
+  const lim = auth.effectiveLimit(u);
+  return {
+    id: u.id, email: u.email, createdAt: u.createdAt,
+    admin: auth.isAdmin(u), suspended: !!u.suspended,
+    siteLimit: u.siteLimit === undefined ? null : u.siteLimit,
+    limit: lim === Infinity ? 'unlimited' : lim,
+    sites: sites.filter((s) => !s.isPreview).length, storageBytes: bytes,
+  };
+}
+
+function notSelf(req, res) {
+  if (req.params.id === req.userId) { res.status(400).json({ error: "you can't do that to your own account" }); return true; }
+  return false;
+}
+
+// ── overview ──
+router.get('/admin/users', (req, res) => res.json({ users: auth.listAllUsers().map(userSummary) }));
+router.get('/admin/sites', (req, res) => {
+  const email = {}; auth.listAllUsers().forEach((u) => { email[u.id] = u.email; });
+  res.json({ sites: store.listSites().map((s) => ({ id: s.id, name: s.name, url: s.url, status: s.status, owner: email[s.userId] || '(unknown)', isPreview: !!s.isPreview, locked: !!s.locked, featured: !!s.featured })) });
+});
+router.get('/admin/stats', (req, res) => {
+  const sites = store.listSites();
+  res.json({ users: auth.listAllUsers().length, sites: sites.filter((s) => !s.isPreview).length, previews: sites.filter((s) => s.isPreview).length });
+});
+router.get('/admin/activity', (req, res) => res.json({ activity: activity.recent(100) }));
+
+// ── server settings ──
+router.get('/admin/settings', (req, res) => res.json(settings.get()));
+router.post('/admin/settings', (req, res) => {
+  const b = req.body || {}; const patch = {};
+  if ('signupsOpen' in b) patch.signupsOpen = !!b.signupsOpen;
+  if ('maintenance' in b) patch.maintenance = !!b.maintenance;
+  if ('announcement' in b) patch.announcement = String(b.announcement || '').slice(0, 280);
+  if ('defaultLimit' in b) patch.defaultLimit = (b.defaultLimit === null || b.defaultLimit === '') ? null : Number(b.defaultLimit);
+  res.json(settings.set(patch));
+});
+
+// ── bans ──
+router.get('/admin/bans', (req, res) => res.json({ bannedEmails: settings.get().bannedEmails }));
+router.post('/admin/ban', (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'email required' });
+  settings.set({ bannedEmails: Array.from(new Set([...settings.get().bannedEmails, email])) });
+  res.json({ ok: true });
+});
+router.post('/admin/unban', (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  settings.set({ bannedEmails: settings.get().bannedEmails.filter((e) => e !== email) });
+  res.json({ ok: true });
+});
+
+// ── per-user actions ──
+router.post('/admin/users/:id/limit', (req, res) => {
+  const u = auth.getUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  let limit = (req.body || {}).limit;
+  if (limit === 'unlimited') limit = -1;
+  else if (limit === null || limit === '' || limit === 'default') limit = null;
+  else { limit = Number(limit); if (!Number.isFinite(limit) || limit < 0) return res.status(400).json({ error: 'limit must be a number, "unlimited", or "default"' }); }
+  auth.updateUser(u.id, { siteLimit: limit });
+  res.json({ ok: true });
+});
+router.post('/admin/users/:id/owner', (req, res) => {
+  if (notSelf(req, res)) return;
+  const u = auth.getUserById(req.params.id); if (!u) return res.status(404).json({ error: 'not found' });
+  auth.updateUser(u.id, { admin: !!(req.body || {}).admin }); res.json({ ok: true });
+});
+router.post('/admin/users/:id/suspend', (req, res) => {
+  if (notSelf(req, res)) return;
+  const u = auth.getUserById(req.params.id); if (!u) return res.status(404).json({ error: 'not found' });
+  auth.updateUser(u.id, { suspended: !!(req.body || {}).suspended }); res.json({ ok: true });
+});
+router.post('/admin/users/:id/reset-password', (req, res) => {
+  const u = auth.getUserById(req.params.id); if (!u) return res.status(404).json({ error: 'not found' });
+  const pw = String((req.body || {}).password || '');
+  if (pw.length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
+  auth.setUserPassword(u.id, pw); res.json({ ok: true });
+});
+router.post('/admin/users/:id/revoke-tokens', (req, res) => { tokens.revokeAllForUser(req.params.id); res.json({ ok: true }); });
+router.get('/admin/users/:id/sites', (req, res) => {
+  res.json({ sites: store.listByUser(req.params.id).filter((s) => !s.isPreview).map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) })) });
+});
+router.delete('/admin/users/:id', async (req, res) => {
+  if (notSelf(req, res)) return;
+  const u = auth.getUserById(req.params.id); if (!u) return res.status(404).json({ error: 'not found' });
+  for (const s of store.listSites().filter((x) => x.userId === u.id && !x.isPreview)) removeSiteCascade(s);
+  tokens.revokeAllForUser(u.id); auth.deleteUserRecord(u.id);
+  activity.log('user-delete', `removed account ${u.email}`);
+  await caddy.writeAndReload(); res.json({ ok: true });
+});
+
+// ── admin actions on ANY site ──
+router.post('/admin/sites/:id/redeploy', (req, res) => {
+  const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });
+  deployer.deploy(s); res.json({ ok: true });
+});
+router.delete('/admin/sites/:id', async (req, res) => {
+  const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });
+  removeSiteCascade(s); await caddy.writeAndReload(); res.json({ ok: true });
+});
+router.post('/admin/sites/:id/transfer', (req, res) => {
+  const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });
+  const target = auth.findUserByEmail((req.body || {}).email || '');
+  if (!target) return res.status(404).json({ error: 'no user with that email' });
+  store.updateSite(s.id, { userId: target.id }); res.json({ ok: true });
+});
+router.post('/admin/sites/:id/lock', (req, res) => {
+  const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });
+  store.updateSite(s.id, { locked: !!(req.body || {}).locked }); res.json({ ok: true });
+});
+router.post('/admin/sites/:id/feature', (req, res) => {
+  const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });
+  store.updateSite(s.id, { featured: !!(req.body || {}).featured }); res.json({ ok: true });
 });
 
 function slugify(s) {

@@ -11,6 +11,9 @@ const express = require('express');
 const config = require('./config');
 const store = require('./store');
 const tokens = require('./tokens');
+const settings = require('./settings');
+const notify = require('./notify');
+const activity = require('./activity');
 
 const USERS_FILE = path.join(config.dataDir, 'users.json');
 const KEY_FILE = path.join(config.dataDir, 'session.key');
@@ -86,9 +89,21 @@ function setCookie(req, res, token) {
 // ── middleware ────────────────────────────────────────────────────
 function getUserId(req) { return verify(readToken(req)); }
 
-// Owner accounts (listed in ADMIN_EMAILS) skip limits.
+// Owner accounts (ADMIN_EMAILS in .env, OR promoted in the Owner Panel)
+// skip limits and can use the Owner Panel.
 function isAdmin(user) {
-  return !!user && config.adminEmails.includes(user.email);
+  return !!user && (config.adminEmails.includes(user.email) || user.admin === true);
+}
+
+// How many sites a user is allowed (owners = unlimited).
+function effectiveLimit(user) {
+  if (isAdmin(user)) return Infinity;
+  if (user) {
+    if (user.siteLimit === -1) return Infinity;             // owner gave them "unlimited"
+    if (Number.isFinite(user.siteLimit)) return user.siteLimit; // a custom number
+  }
+  const d = settings.get().defaultLimit;
+  return Number.isFinite(d) ? d : config.maxSitesPerUser;
 }
 
 function requireAuth(req, res, next) {
@@ -99,11 +114,33 @@ function requireAuth(req, res, next) {
     if (m) user = getUser(tokens.verify(m[1].trim()));
   }
   if (!user) return res.status(401).json({ error: 'not logged in' });
+  if (user.suspended && !isAdmin(user)) return res.status(403).json({ error: 'Your account is suspended.' });
+  if (settings.get().maintenance && !isAdmin(user)) return res.status(503).json({ error: 'Perch is down for maintenance — back soon.' });
   req.userId = user.id;
   req.user = user;
   req.isAdmin = isAdmin(user);
   next();
 }
+
+// Owners only past this point.
+function requireAdmin(req, res, next) {
+  if (!req.isAdmin) return res.status(403).json({ error: 'owner only' });
+  next();
+}
+
+// ── user management (used by the Owner Panel) ────────────────────
+function listAllUsers() { return readUsers(); }
+function updateUser(id, patch) {
+  const users = readUsers();
+  const i = users.findIndex((u) => u.id === id);
+  if (i === -1) return null;
+  users[i] = { ...users[i], ...patch };
+  writeUsers(users);
+  return users[i];
+}
+function deleteUserRecord(id) { writeUsers(readUsers().filter((u) => u.id !== id)); }
+function setUserPassword(id, pw) { return updateUser(id, { password: hashPassword(pw) }); }
+function getAdminIds() { return readUsers().filter((u) => isAdmin(u)).map((u) => u.id); }
 
 // ── routes (mounted at /api/auth) ─────────────────────────────────
 const router = express.Router();
@@ -112,16 +149,23 @@ const validEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 router.post('/signup', (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const pw = String(req.body.password || '');
+  const s = settings.get();
+  if (!s.signupsOpen) return res.status(403).json({ error: 'New signups are closed right now.' });
+  if (s.bannedEmails.includes(email)) return res.status(403).json({ error: 'This email can’t sign up.' });
   if (!validEmail(email)) return res.status(400).json({ error: 'enter a valid email' });
   if (pw.length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
   if (findByEmail(email)) return res.status(409).json({ error: 'that email already has an account' });
 
   const firstUser = readUsers().length === 0;
-  const user = { id: crypto.randomUUID(), email, password: hashPassword(pw), createdAt: Date.now() };
+  const user = { id: crypto.randomUUID(), email, password: hashPassword(pw), createdAt: Date.now(), admin: firstUser };
   const users = readUsers(); users.push(user); writeUsers(users);
 
   // The very first account adopts any sites made before logins existed.
   if (firstUser) store.claimOwnerless(user.id);
+
+  // Tell the owners + log it.
+  activity.log('signup', `${email} joined`);
+  for (const aid of getAdminIds()) if (aid !== user.id) notify.add(aid, { type: 'signup', message: `${email} made an account` });
 
   setCookie(req, res, sign(user.id));
   res.status(201).json({ email: user.email });
@@ -134,6 +178,7 @@ router.post('/login', (req, res) => {
   if (!user || !verifyPassword(pw, user.password)) {
     return res.status(401).json({ error: 'wrong email or password' });
   }
+  if (user.suspended && !isAdmin(user)) return res.status(403).json({ error: 'Your account is suspended.' });
   setCookie(req, res, sign(user.id));
   res.json({ email: user.email });
 });
@@ -143,7 +188,13 @@ router.post('/logout', (req, res) => { res.clearCookie(COOKIE, { path: '/' }); r
 router.get('/me', (req, res) => {
   const user = getUser(getUserId(req));
   if (!user) return res.status(401).json({ error: 'not logged in' });
-  res.json({ id: user.id, email: user.email, maxSites: config.maxSitesPerUser, unlimited: isAdmin(user) });
+  const lim = effectiveLimit(user);
+  res.json({
+    id: user.id, email: user.email,
+    admin: isAdmin(user), unlimited: isAdmin(user),
+    maxSites: Number.isFinite(lim) ? lim : null,
+    announcement: settings.get().announcement,
+  });
 });
 
 // Look up a user by email (for sharing). Returns the user or undefined.
@@ -161,4 +212,9 @@ function checkLogin(email, password) {
   return user;
 }
 
-module.exports = { router, requireAuth, getUserId, findUserByEmail, getUserById, checkLogin };
+module.exports = {
+  router, requireAuth, requireAdmin, getUserId,
+  findUserByEmail, getUserById, checkLogin,
+  isAdmin, effectiveLimit,
+  listAllUsers, updateUser, deleteUserRecord, setUserPassword, getAdminIds,
+};
