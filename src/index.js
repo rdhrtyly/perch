@@ -83,22 +83,28 @@ function cors(req, res, next) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 }
-app.use(['/mcp', '/oauth', '/.well-known'], cors);
+app.use(['/mcp', '/connect', '/oauth', '/.well-known'], cors);
 
 const oauthBase = (req) => (config.dashboardDomain ? `https://${config.dashboardDomain}` : `${req.protocol}://${req.get('host')}`);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// The MCP endpoint itself.
+// The MCP endpoint — reachable at /mcp AND /connect (a spare URL in case
+// the connector registry won't let you re-add /mcp).
 app.post('/mcp', mcp.handler);
 app.get('/mcp', (req, res) => res.status(405).json({ error: 'MCP endpoint — use POST' }));
+app.post('/connect', mcp.handler);
+app.get('/connect', (req, res) => res.status(405).json({ error: 'MCP endpoint — use POST' }));
 
 // ── OAuth discovery metadata ─────────────────────────────────────
-function protectedResource(req, res) {
+app.get('/.well-known/oauth-protected-resource', (req, res) => {
   const b = oauthBase(req);
   res.json({ resource: `${b}/mcp`, authorization_servers: [b] });
-}
-app.get('/.well-known/oauth-protected-resource', protectedResource);
-app.get('/.well-known/oauth-protected-resource/mcp', protectedResource);
+});
+// Path-specific metadata (so /mcp and /connect each advertise themselves).
+app.get('/.well-known/oauth-protected-resource/:rsrc', (req, res) => {
+  const b = oauthBase(req);
+  res.json({ resource: `${b}/${req.params.rsrc}`, authorization_servers: [b] });
+});
 app.get('/.well-known/oauth-authorization-server', (req, res) => {
   const b = oauthBase(req);
   res.json({

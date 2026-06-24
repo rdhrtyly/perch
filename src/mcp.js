@@ -142,7 +142,7 @@ async function handler(req, res) {
 
   // No valid token → 401 with a pointer to our OAuth metadata (kicks off login).
   if (!userId) {
-    res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`);
+    res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource${req.path}"`);
     return res.status(401).json({ jsonrpc: '2.0', id: (req.body && req.body.id) || null, error: { code: -32001, message: 'Unauthorized' } });
   }
 
