@@ -25,18 +25,31 @@ const TOOLS = [
   },
   {
     name: 'deploy_site',
-    description: 'Deploy a static website (HTML/CSS/JS) to Perch. Give it a name and the files; it goes live at <name>.<domain> with HTTPS. Re-deploying the same name updates that site.',
+    description: 'Deploy a website to Perch and get a live HTTPS URL. Works for plain HTML/CSS/JS AND full React / Vite / Next.js apps — just include ALL the project source files (index.html or package.json, src/, configs, etc.) but NOT node_modules. Perch auto-detects the type, installs dependencies, and builds it (React/Vite → built and served as static; Next.js → run as a live app). Re-deploying the same name updates that site.',
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Site name; becomes the subdomain.' },
         files: {
           type: 'array',
-          description: 'The website files. index.html is required at the top level.',
+          description: 'Every source file in the project. For static: index.html + assets. For React/Vite/Next.js: package.json + src/ + configs (no node_modules).',
           items: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] },
         },
       },
       required: ['name', 'files'],
+    },
+  },
+  {
+    name: 'deploy_from_github',
+    description: 'Deploy a GitHub repo to Perch — it clones, builds, and serves it. Works for static, React/Vite, and Next.js. Best for existing projects (no need to send every file). The repo must be public, or a GITHUB_TOKEN configured on the server for private repos.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'GitHub repo as owner/name, e.g. rdhrtyly/creami' },
+        name: { type: 'string', description: 'Optional site name (defaults to the repo name).' },
+        branch: { type: 'string', description: 'Optional branch (defaults to main).' },
+      },
+      required: ['repo'],
     },
   },
   {
@@ -78,6 +91,27 @@ function deployFromFiles(userId, name, files) {
   return store.getSite(id);
 }
 
+// Deploy an existing GitHub repo (Perch clones + builds it).
+function deployFromGithub(userId, repo, name, branch) {
+  repo = String(repo || '').trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('repo must be in the form owner/name');
+  const siteName = (name && String(name).trim()) || repo.split('/')[1];
+  const baseId = slugify(siteName);
+  const existing = store.getSite(baseId);
+  if (existing && existing.userId !== userId) throw new Error('a site with that name already exists');
+  const id = existing ? baseId : store.uniqueId(baseId);
+
+  const domain = `${id}.${config.baseDomain}`;
+  store.upsertSite({
+    id, name: siteName, repo, branch: (branch && String(branch).trim()) || 'main', userId,
+    source: 'git', domain, domainSource: 'manual',
+    type: null, port: null, status: 'new',
+    lastDeployAt: null, lastDeployId: null, url: `https://${domain}`,
+  });
+  deployer.deploy(store.getSite(id));
+  return store.getSite(id);
+}
+
 function text(t) { return { content: [{ type: 'text', text: t }] }; }
 
 async function runTool(userId, name, args) {
@@ -88,7 +122,11 @@ async function runTool(userId, name, args) {
   }
   if (name === 'deploy_site') {
     const site = deployFromFiles(userId, String(args.name || ''), args.files);
-    return text(`Deploying "${site.name}". It will be live at ${site.url} in a few seconds.`);
+    return text(`Deploying "${site.name}". It will be live at ${site.url} shortly (React/Next.js builds take a minute or two). Use list_sites to check status.`);
+  }
+  if (name === 'deploy_from_github') {
+    const site = deployFromGithub(userId, args.repo, args.name, args.branch);
+    return text(`Deploying "${site.name}" from ${site.repo} (${site.branch}). It will be live at ${site.url} shortly. Use list_sites to check status.`);
   }
   if (name === 'redeploy_site') {
     const s = store.getSite(String(args.id || ''));
