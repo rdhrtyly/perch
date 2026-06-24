@@ -3,6 +3,9 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const dns = require('dns').promises;
+const { exec, execSync } = require('child_process');
 const multer = require('multer');
 const config = require('../config');
 const store = require('../store');
@@ -19,7 +22,11 @@ const activity = require('../activity');
 const QRCode = require('qrcode');
 const bcrypt = require('bcryptjs');
 const auth = require('../auth');
-const { execSync } = require('child_process');
+const guards = require('../guards');
+const system = require('../system');
+const history = require('../history');
+const templates = require('../templates');
+const { removeSiteCascade } = require('../site-actions');
 
 const router = express.Router();
 
@@ -62,19 +69,6 @@ function atLimit(req) {
   return store.listByUser(req.userId).filter((s) => !s.isPreview).length >= limit;
 }
 
-// Remove a single site's files, container, and records.
-function removeSiteArtifacts(s) {
-  if (s.type === 'nextjs') { try { execSync(`docker rm -f perch-${s.id}`, { stdio: 'ignore' }); } catch { /* ok */ } }
-  for (const dir of [config.workspaceDir, config.sitesDir, config.versionsDir]) {
-    fs.rmSync(path.join(dir, s.id), { recursive: true, force: true });
-  }
-  store.removeSite(s.id); stats.removeSite(s.id); uptime.removeSite(s.id);
-}
-// Remove a site AND its previews.
-function removeSiteCascade(site) {
-  [site, ...store.listSites().filter((s) => s.parentId === site.id)].forEach(removeSiteArtifacts);
-}
-
 // Folder size in bytes (for storage stats).
 function dirSize(dir) {
   let total = 0;
@@ -94,8 +88,21 @@ router.get('/sites', (req, res) => {
   res.json(
     store.listByUser(req.userId)
       .filter((s) => !s.isPreview)
-      .map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) }))
+      .map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id), views: stats.getStats(s.id).total }))
   );
+});
+
+// ── Public profile handle (for the portfolio page /u/<handle>) ───
+const RESERVED_HANDLES = new Set(['api', 'badge', 'u', 'status', 'deploy', 'landing', 'admin', 'login', 'styles', 'app', 'site', 'sw', 'manifest', 'docs', 'portfolio', 'oauth', 'mcp', 'connect', 'webhook', 'assets', 'public', 'me', 'home']);
+router.post('/profile', (req, res) => {
+  let handle = (req.body || {}).handle;
+  if (handle === '' || handle === null || handle === undefined) { auth.updateUser(req.userId, { handle: null }); return res.json({ ok: true, handle: null }); }
+  handle = String(handle).trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,29}$/.test(handle)) return res.status(400).json({ error: 'Handle must be 2–30 letters, numbers, or dashes and start with a letter or number.' });
+  if (RESERVED_HANDLES.has(handle)) return res.status(400).json({ error: 'That handle is reserved — pick another.' });
+  if (auth.listAllUsers().some((u) => u.handle === handle && u.id !== req.userId)) return res.status(409).json({ error: 'That handle is taken.' });
+  auth.updateUser(req.userId, { handle });
+  res.json({ ok: true, handle });
 });
 
 // Add a site from a GitHub repo.
@@ -103,6 +110,8 @@ router.post('/sites', (req, res) => {
   const { name, repo, branch, domain, domainSource } = req.body || {};
   if (!name || !repo) return res.status(400).json({ error: 'name and repo are required' });
   if (atLimit(req)) return res.status(403).json({ error: `You've hit the limit of ${config.maxSitesPerUser} sites.` });
+  const g = guards.checkDeploy(req.userId, { isNew: true });
+  if (!g.ok) return res.status(g.status).json({ error: g.error });
 
   const id = store.uniqueId(slugify(name));
   const finalDomain = domain || `${id}.${config.baseDomain}`;
@@ -125,6 +134,8 @@ router.post('/upload', upload.any(), (req, res) => {
   if (!name) return res.status(400).json({ error: 'a name is required' });
   if (!req.files || !req.files.length) return res.status(400).json({ error: 'no files were uploaded' });
   if (atLimit(req)) return res.status(403).json({ error: `You've hit the limit of ${config.maxSitesPerUser} sites.` });
+  const g = guards.checkDeploy(req.userId, { isNew: true });
+  if (!g.ok) return res.status(g.status).json({ error: g.error });
 
   const id = store.uniqueId(slugify(name));
   const dest = path.join(config.workspaceDir, id);
@@ -160,10 +171,45 @@ router.post('/upload', upload.any(), (req, res) => {
   res.status(201).json({ ok: true, id, deployId: store.getSite(id).lastDeployId });
 });
 
+// ── Templates: deploy a starter site with no upload ──────────────
+router.get('/templates', (req, res) => res.json({ templates: templates.list() }));
+router.post('/sites/template', (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  const files = templates.files(String((req.body || {}).template || ''));
+  if (!name) return res.status(400).json({ error: 'a name is required' });
+  if (!files) return res.status(400).json({ error: 'unknown template' });
+  if (atLimit(req)) return res.status(403).json({ error: `You've hit the limit of ${config.maxSitesPerUser} sites.` });
+  const g = guards.checkDeploy(req.userId, { isNew: true });
+  if (!g.ok) return res.status(g.status).json({ error: g.error });
+
+  const id = store.uniqueId(slugify(name));
+  const dest = path.join(config.workspaceDir, id);
+  fs.rmSync(dest, { recursive: true, force: true });
+  fs.mkdirSync(dest, { recursive: true });
+  for (const f of files) {
+    const rel = String(f.path).replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!rel || rel.includes('..')) continue;
+    const fp = path.join(dest, rel);
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, String(f.content == null ? '' : f.content));
+  }
+  const domain = `${id}.${config.baseDomain}`;
+  store.upsertSite({
+    id, name, repo: null, branch: null, userId: req.userId,
+    source: 'upload', domain, domainSource: 'manual',
+    type: null, port: null, status: 'new',
+    lastDeployAt: null, lastDeployId: null, url: `https://${domain}`,
+  });
+  deployer.deploy(store.getSite(id));
+  res.status(201).json({ ok: true, id, deployId: store.getSite(id).lastDeployId });
+});
+
 // Redeploy a site.
 router.post('/sites/:id/deploy', (req, res) => {
   const site = accessibleSite(req);
   if (!site) return res.status(404).json({ error: 'not found' });
+  const g = guards.checkDeploy(req.userId, { isNew: false });
+  if (!g.ok) return res.status(g.status).json({ error: g.error });
   deployer.deploy(site);
   res.status(202).json({ ok: true, deployId: store.getSite(site.id).lastDeployId });
 });
@@ -172,6 +218,88 @@ router.post('/sites/:id/deploy', (req, res) => {
 router.get('/sites/:id/stats', (req, res) => {
   if (!accessibleSite(req)) return res.status(404).json({ error: 'not found' });
   res.json(stats.getStats(req.params.id));
+});
+
+// Deploy history (persisted across restarts).
+router.get('/sites/:id/history', (req, res) => {
+  if (!accessibleSite(req)) return res.status(404).json({ error: 'not found' });
+  res.json({ history: history.getFor(req.params.id) });
+});
+
+// Pin/unpin a site (owner only — keeps it at the top of the dashboard).
+router.post('/sites/:id/pin', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  store.updateSite(site.id, { pinned: !!(req.body || {}).pinned });
+  res.json({ ok: true });
+});
+
+// Rename a site's display name (the subdomain/URL stays the same).
+router.post('/sites/:id/rename', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const name = String((req.body || {}).name || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'enter a name' });
+  store.updateSite(site.id, { name });
+  res.json({ ok: true, name });
+});
+
+// Clone a site into a brand-new one (copies uploaded files / re-clones a repo).
+router.post('/sites/:id/clone', (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  if (site.isPreview) return res.status(400).json({ error: "can't clone a preview" });
+  if (atLimit(req)) return res.status(403).json({ error: `You've hit the limit of ${config.maxSitesPerUser} sites.` });
+  const g = guards.checkDeploy(req.userId, { isNew: true });
+  if (!g.ok) return res.status(g.status).json({ error: g.error });
+
+  const newName = String((req.body || {}).name || '').trim() || `${site.name} copy`;
+  const newId = store.uniqueId(slugify(newName));
+
+  if (site.source === 'upload') {
+    const from = path.join(config.workspaceDir, site.id);
+    const to = path.join(config.workspaceDir, newId);
+    fs.rmSync(to, { recursive: true, force: true });
+    if (!fs.existsSync(from)) return res.status(400).json({ error: 'the original files are no longer available to clone' });
+    fs.cpSync(from, to, { recursive: true });
+  }
+  const domain = `${newId}.${config.baseDomain}`;
+  store.upsertSite({
+    id: newId, name: newName, repo: site.repo || null, branch: site.branch || null,
+    userId: req.userId, source: site.source, domain, domainSource: 'manual',
+    type: null, port: null, status: 'new',
+    lastDeployAt: null, lastDeployId: null, url: `https://${domain}`,
+  });
+  deployer.deploy(store.getSite(newId));
+  res.status(201).json({ ok: true, id: newId, deployId: store.getSite(newId).lastDeployId });
+});
+
+// ── Custom domain wizard (connect a domain you already own) ──────
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
+router.post('/sites/:id/domain', async (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  const domain = String((req.body || {}).domain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!DOMAIN_RE.test(domain)) return res.status(400).json({ error: 'Enter a domain like mysite.com' });
+  if (store.listSites().some((s) => s.customDomain === domain && s.id !== site.id)) return res.status(409).json({ error: 'That domain is already connected to another site.' });
+  store.updateSite(site.id, { customDomain: domain });
+  await caddy.writeAndReload();
+  res.json({ ok: true, domain, serverIp: config.serverIp || null });
+});
+router.get('/sites/:id/domain/check', async (req, res) => {
+  const site = accessibleSite(req);
+  if (!site || !site.customDomain) return res.status(404).json({ error: 'no custom domain set' });
+  let ips = [];
+  try { ips = await dns.resolve4(site.customDomain); } catch { /* not resolving yet */ }
+  const pointed = config.serverIp ? ips.includes(config.serverIp) : ips.length > 0;
+  res.json({ domain: site.customDomain, ips, serverIp: config.serverIp || null, pointed });
+});
+router.delete('/sites/:id/domain', async (req, res) => {
+  const site = ownedSite(req);
+  if (!site) return res.status(404).json({ error: 'not found' });
+  store.updateSite(site.id, { customDomain: null });
+  await caddy.writeAndReload();
+  res.json({ ok: true });
 });
 
 // Password-protect a site (HTTP basic auth via Caddy). Username is "perch".
@@ -277,6 +405,8 @@ router.post('/sites/:id/preview', (req, res) => {
   const branch = String((req.body || {}).branch || '').trim();
   const branchSlug = slugify(branch);
   if (!branchSlug) return res.status(400).json({ error: 'enter a valid branch name' });
+  const g = guards.checkDeploy(req.userId, { isNew: true });
+  if (!g.ok) return res.status(g.status).json({ error: g.error });
 
   const id = store.uniqueId(`${branchSlug}--${parent.id}`);
   const domain = `${id}.${config.baseDomain}`;
@@ -408,11 +538,14 @@ function userSummary(u) {
   let bytes = 0;
   for (const s of sites) bytes += dirSize(path.join(config.sitesDir, s.id));
   const lim = auth.effectiveLimit(u);
+  const storageMb = auth.effectiveStorageMb(u);
   return {
     id: u.id, email: u.email, createdAt: u.createdAt,
     admin: auth.isAdmin(u), suspended: !!u.suspended,
     siteLimit: u.siteLimit === undefined ? null : u.siteLimit,
     limit: lim === Infinity ? 'unlimited' : lim,
+    storageLimitMb: u.storageLimitMb === undefined ? null : u.storageLimitMb,
+    storageCap: storageMb === Infinity ? 'unlimited' : storageMb,
     sites: sites.filter((s) => !s.isPreview).length, storageBytes: bytes,
   };
 }
@@ -434,6 +567,91 @@ router.get('/admin/stats', (req, res) => {
 });
 router.get('/admin/activity', (req, res) => res.json({ activity: activity.recent(100) }));
 
+// ── server health + control ──
+// A snapshot of how the droplet is doing: memory, disk, containers, storage.
+router.get('/admin/health', (req, res) => {
+  const sites = store.listSites();
+  let storageBytes = 0;
+  for (const s of sites) storageBytes += system.dirSize(path.join(config.sitesDir, s.id));
+
+  res.json({
+    mem: system.memory(),
+    disk: system.disk(),
+    containers: system.containerCount(),
+    sites: sites.filter((s) => !s.isPreview).length,
+    previews: sites.filter((s) => s.isPreview).length,
+    storageBytes,
+    uptimeSeconds: Math.round(process.uptime()),
+    loadAvg: typeof os.loadavg === 'function' ? Math.round(os.loadavg()[0] * 100) / 100 : null,
+  });
+});
+
+// Next.js sites run as their own container; list them + whether they're up.
+router.get('/admin/containers', (req, res) => {
+  const running = system.dockerNames() || [];
+  const apps = store.listSites().filter((s) => s.type === 'nextjs').map((s) => ({
+    id: s.id, name: s.name, url: s.url, port: s.port || null,
+    running: running.includes(`perch-${s.id}`),
+  }));
+  res.json({ caddyRunning: running.includes('perch-caddy'), apps });
+});
+
+// Restart one Next.js site's container.
+router.post('/admin/sites/:id/restart', (req, res) => {
+  const s = store.getSite(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  if (s.type !== 'nextjs') return res.status(400).json({ error: 'only Next.js sites run as a container' });
+  try { execSync(`docker restart perch-${s.id}`, { stdio: 'ignore' }); }
+  catch { return res.status(500).json({ error: 'restart failed — is the container running?' }); }
+  activity.log('restart', `restarted the container for "${s.name}"`);
+  res.json({ ok: true });
+});
+
+// Restart Caddy (safe) or Perch itself (answers first, then restarts).
+router.post('/admin/restart', (req, res) => {
+  const target = String((req.body || {}).target || '');
+  if (target === 'caddy') {
+    try { execSync('docker restart perch-caddy', { stdio: 'ignore' }); }
+    catch { return res.status(500).json({ error: 'could not restart Caddy' }); }
+    activity.log('restart', 'restarted Caddy');
+    return res.json({ ok: true });
+  }
+  if (target === 'perch') {
+    activity.log('restart', 'restarted Perch');
+    res.json({ ok: true, note: 'Perch is restarting — the dashboard may blink for a few seconds.' });
+    // Restart AFTER the response flushes (pm2 will respawn this process).
+    setTimeout(() => { try { exec('pm2 restart perch'); } catch { /* ignore */ } }, 600);
+    return;
+  }
+  res.status(400).json({ error: 'target must be "caddy" or "perch"' });
+});
+
+// Daily signups + deploys for the last 14 days (owner charts).
+router.get('/admin/charts', (req, res) => {
+  const DAY = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const start = today.getTime() - i * DAY;
+    const d = new Date(start);
+    days.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, start, end: start + DAY, signups: 0, deploys: 0 });
+  }
+  const bucket = (t) => days.find((d) => t >= d.start && t < d.end);
+  for (const u of auth.listAllUsers()) { const b = bucket(u.createdAt || 0); if (b) b.signups++; }
+  for (const a of activity.recent(300)) { if (a.type === 'deploy') { const b = bucket(a.t); if (b) b.deploys++; } }
+  res.json({ days: days.map(({ label, signups, deploys }) => ({ label, signups, deploys })) });
+});
+
+// Send a notification to EVERY user's bell at once.
+router.post('/admin/broadcast', (req, res) => {
+  const message = String((req.body || {}).message || '').trim().slice(0, 280);
+  if (!message) return res.status(400).json({ error: 'message required' });
+  const users = auth.listAllUsers();
+  for (const u of users) notify.add(u.id, { type: 'broadcast', message });
+  activity.log('broadcast', `sent an announcement to ${users.length} ${users.length === 1 ? 'user' : 'users'}`);
+  res.json({ ok: true, sent: users.length });
+});
+
 // ── server settings ──
 router.get('/admin/settings', (req, res) => res.json(settings.get()));
 router.post('/admin/settings', (req, res) => {
@@ -442,6 +660,7 @@ router.post('/admin/settings', (req, res) => {
   if ('maintenance' in b) patch.maintenance = !!b.maintenance;
   if ('announcement' in b) patch.announcement = String(b.announcement || '').slice(0, 280);
   if ('defaultLimit' in b) patch.defaultLimit = (b.defaultLimit === null || b.defaultLimit === '') ? null : Number(b.defaultLimit);
+  if ('defaultStorageMb' in b) patch.defaultStorageMb = (b.defaultStorageMb === null || b.defaultStorageMb === '') ? null : Number(b.defaultStorageMb);
   res.json(settings.set(patch));
 });
 
@@ -470,6 +689,16 @@ router.post('/admin/users/:id/limit', (req, res) => {
   auth.updateUser(u.id, { siteLimit: limit });
   res.json({ ok: true });
 });
+router.post('/admin/users/:id/storage', (req, res) => {
+  const u = auth.getUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  let mb = (req.body || {}).mb;
+  if (mb === 'unlimited') mb = -1;
+  else if (mb === null || mb === '' || mb === 'default') mb = null;
+  else { mb = Number(mb); if (!Number.isFinite(mb) || mb < 0) return res.status(400).json({ error: 'storage must be a number of MB, "unlimited", or "default"' }); }
+  auth.updateUser(u.id, { storageLimitMb: mb });
+  res.json({ ok: true });
+});
 router.post('/admin/users/:id/owner', (req, res) => {
   if (notSelf(req, res)) return;
   const u = auth.getUserById(req.params.id); if (!u) return res.status(404).json({ error: 'not found' });
@@ -490,6 +719,18 @@ router.post('/admin/users/:id/revoke-tokens', (req, res) => { tokens.revokeAllFo
 router.get('/admin/users/:id/sites', (req, res) => {
   res.json({ sites: store.listByUser(req.params.id).filter((s) => !s.isPreview).map((s) => ({ ...publicSite(s, req.userId), ...uptime.getUptime(s.id) })) });
 });
+// View-as-user: a read-only overview of one account, for debugging their sites.
+router.get('/admin/users/:id/overview', (req, res) => {
+  const u = auth.getUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  const sites = store.listSites().filter((s) => s.userId === u.id && !s.isPreview).map((s) => ({
+    id: s.id, name: s.name, url: s.url, status: s.status, type: s.type,
+    storageBytes: system.dirSize(path.join(config.sitesDir, s.id)),
+    views: stats.getStats(s.id).total,
+    ...uptime.getUptime(s.id),
+  }));
+  res.json({ user: userSummary(u), sites, tokens: tokens.listFor(u.id).length });
+});
 router.delete('/admin/users/:id', async (req, res) => {
   if (notSelf(req, res)) return;
   const u = auth.getUserById(req.params.id); if (!u) return res.status(404).json({ error: 'not found' });
@@ -503,6 +744,27 @@ router.delete('/admin/users/:id', async (req, res) => {
 router.post('/admin/sites/:id/redeploy', (req, res) => {
   const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });
   deployer.deploy(s); res.json({ ok: true });
+});
+// Bulk redeploy/delete several sites at once (owner panel checkboxes).
+router.post('/admin/sites/bulk', async (req, res) => {
+  const b = req.body || {};
+  const action = String(b.action || '');
+  const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+  if (!ids.length) return res.status(400).json({ error: 'no sites selected' });
+  if (action !== 'redeploy' && action !== 'delete') return res.status(400).json({ error: 'action must be "redeploy" or "delete"' });
+
+  let done = 0, skipped = 0;
+  for (const id of ids) {
+    const s = store.getSite(id);
+    if (!s) { skipped++; continue; }
+    if (action === 'redeploy') { deployer.deploy(s); done++; }
+    else { if (s.locked) { skipped++; continue; } removeSiteCascade(s); done++; }
+  }
+  if (action === 'delete') {
+    activity.log('delete', `bulk-deleted ${done} site${done === 1 ? '' : 's'}`);
+    await caddy.writeAndReload();
+  }
+  res.json({ ok: true, done, skipped });
 });
 router.delete('/admin/sites/:id', async (req, res) => {
   const s = store.getSite(req.params.id); if (!s) return res.status(404).json({ error: 'not found' });

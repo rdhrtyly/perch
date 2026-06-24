@@ -17,6 +17,7 @@ const oauth = require('./oauth');
 const mcp = require('./mcp');
 const settings = require('./settings');
 const activity = require('./activity');
+const history = require('./history');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -218,11 +219,63 @@ app.get('/api/public/featured', (req, res) => {
   res.json({ sites: store.listSites().filter((s) => s.featured && !s.isPreview).map((s) => ({ name: s.name, url: s.url })) });
 });
 
+// Public portfolio data — one user's LIVE sites, by their chosen handle.
+app.get('/api/public/portfolio/:handle', (req, res) => {
+  const handle = String(req.params.handle || '').toLowerCase();
+  const user = auth.listAllUsers().find((u) => u.handle === handle);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  const sites = store.listSites()
+    .filter((s) => s.userId === user.id && !s.isPreview && s.status === 'live')
+    .map((s) => ({ name: s.name, url: s.url, domain: s.customDomain || s.domain }));
+  res.json({ handle: user.handle, sites });
+});
+
+// The public portfolio PAGE (/u/<handle>) — served to anyone, no login.
+app.get('/u/:handle', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'portfolio.html')));
+
+// ── Status badge (public, embeddable SVG) ────────────────────────
+// Usage:  ![status](https://useperch.dev/badge/<site-id>.svg)
+app.get('/badge/:file', (req, res) => {
+  const id = String(req.params.file).replace(/\.svg$/i, '');
+  const site = store.getSite(id);
+  let label = 'unknown', color = '#9b9b9b';
+  if (site) {
+    const up = uptime.getUptime(site.id).up;
+    if (site.status === 'live') { label = up === false ? 'down' : 'live'; color = up === false ? '#e05d57' : '#3fb950'; }
+    else if (site.status === 'building') { label = 'building'; color = '#d9a441'; }
+    else if (site.status === 'failed') { label = 'failed'; color = '#e05d57'; }
+    else { label = 'new'; color = '#9b9b9b'; }
+  }
+  const left = 'perch';
+  const lw = 42, rw = 16 + label.length * 6.5, w = lw + rw;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="20" role="img" aria-label="perch: ${label}">
+  <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+  <clipPath id="r"><rect width="${w}" height="20" rx="3" fill="#fff"/></clipPath>
+  <g clip-path="url(#r)">
+    <rect width="${lw}" height="20" fill="#2d2a26"/>
+    <rect x="${lw}" width="${rw}" height="20" fill="${color}"/>
+    <rect width="${w}" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="${lw / 2}" y="14">${left}</text>
+    <text x="${lw + rw / 2}" y="14">${label}</text>
+  </g></svg>`;
+  res.set('Content-Type', 'image/svg+xml');
+  res.set('Cache-Control', 'no-cache, max-age=60');
+  res.send(svg);
+});
+
 // ── The dashboard's API — requires being logged in ───────────────
 app.use('/api', auth.requireAuth, api);
 
 // ── The dashboard + live status web pages ────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Anything that didn't match a route or a static file → a friendly 404.
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not found' });
+  res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+});
 
 // Make sure the folders Perch needs exist.
 for (const dir of [config.dataDir, config.workspaceDir, config.sitesDir, config.versionsDir]) {
@@ -253,6 +306,10 @@ oauth.startAutoFlush();
 settings.load();
 activity.load();
 activity.startAutoFlush();
+
+// Load persisted deploy history (survives restarts).
+history.load();
+history.startAutoFlush();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.

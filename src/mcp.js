@@ -11,9 +11,50 @@ const store = require('./store');
 const deployer = require('./deployer');
 const tokens = require('./tokens');
 const oauth = require('./oauth');
+const stats = require('./stats');
+const uptime = require('./uptime');
+const logs = require('./logs/stream');
+const caddy = require('./deployer/caddy');
+const guards = require('./guards');
+const { removeSiteCascade } = require('./site-actions');
 
 function slugify(s) {
   return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Find one of the user's sites by id, or by name (case-insensitive / slug).
+// Includes sites shared with the user, not just ones they own.
+function resolveSite(userId, { id, name } = {}) {
+  if (id) {
+    const s = store.getSite(String(id));
+    if (s && (s.userId === userId || (s.collaborators || []).includes(userId))) return s;
+  }
+  if (name) {
+    const want = slugify(name);
+    const mine = store.listByUser(userId);
+    return mine.find((s) => s.id === want)
+      || mine.find((s) => slugify(s.name) === want)
+      || mine.find((s) => String(s.name).toLowerCase() === String(name).toLowerCase())
+      || null;
+  }
+  return null;
+}
+
+function fmtBytes(n) {
+  if (n == null) return '?';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+// Human-friendly "how long ago" for a timestamp.
+function fmtAge(ts) {
+  if (!ts) return 'never';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
 }
 
 // The tools Claude can use.
@@ -57,6 +98,44 @@ const TOOLS = [
     description: 'Redeploy an existing site by its id.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
+  {
+    name: 'check_site',
+    description: "Check that a deployed site is actually live and working: fetches its real URL from the server and reports the HTTP status, response time, the page title, a snippet of the page's text, plus its recent uptime % and visit counts. Use this right after a deploy to prove it works, or any time you want to confirm a site is up. Identify the site by id OR name.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The site id (subdomain). Optional if you pass name.' },
+        name: { type: 'string', description: 'The site name. Optional if you pass id.' },
+      },
+    },
+  },
+  {
+    name: 'get_site_stats',
+    description: 'Get visitor analytics and uptime for a site: total page views, views in the last 24 hours and 7 days, an estimate of unique visitors, recent uptime %, and a 14-day daily view count. Identify the site by id OR name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The site id. Optional if you pass name.' },
+        name: { type: 'string', description: 'The site name. Optional if you pass id.' },
+      },
+    },
+  },
+  {
+    name: 'get_deploy_logs',
+    description: "Get the build log for a site's most recent deploy — the step-by-step output of cloning/building/publishing. Useful when a deploy failed and you want to see why. Identify the site by id OR name.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The site id. Optional if you pass name.' },
+        name: { type: 'string', description: 'The site name. Optional if you pass id.' },
+      },
+    },
+  },
+  {
+    name: 'delete_site',
+    description: "Permanently delete a site: removes its files, any running container, its stats, and its web address. This cannot be undone, and only the site's owner can do it. Requires the exact site id (not the name) to avoid deleting the wrong site.",
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'The exact site id to delete.' } }, required: ['id'] },
+  },
 ];
 
 // Write provided files to a workspace and deploy as a static site.
@@ -67,6 +146,8 @@ function deployFromFiles(userId, name, files) {
   const baseId = slugify(name);
   const existing = store.getSite(baseId);
   if (existing && existing.userId !== userId) throw new Error('a site with that name already exists');
+  const g = guards.checkDeploy(userId, { isNew: !existing });
+  if (!g.ok) throw new Error(g.error);
   const id = existing ? baseId : store.uniqueId(baseId);
 
   const dest = path.join(config.workspaceDir, id);
@@ -99,6 +180,8 @@ function deployFromGithub(userId, repo, name, branch) {
   const baseId = slugify(siteName);
   const existing = store.getSite(baseId);
   if (existing && existing.userId !== userId) throw new Error('a site with that name already exists');
+  const g = guards.checkDeploy(userId, { isNew: !existing });
+  if (!g.ok) throw new Error(g.error);
   const id = existing ? baseId : store.uniqueId(baseId);
 
   const domain = `${id}.${config.baseDomain}`;
@@ -110,6 +193,102 @@ function deployFromGithub(userId, repo, name, branch) {
   });
   deployer.deploy(store.getSite(id));
   return store.getSite(id);
+}
+
+// Fetch the live site and report whether it's really up and serving content.
+async function checkSite(userId, args) {
+  const site = resolveSite(userId, args);
+  if (!site) throw new Error('site not found — use list_sites to see ids and names');
+  const url = site.url || `https://${site.customDomain || site.domain}`;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  const started = Date.now();
+  let res = null, body = '', err = null;
+  try {
+    res = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
+    body = await res.text();
+  } catch (e) {
+    err = e;
+  } finally {
+    clearTimeout(timer);
+  }
+  const ms = Date.now() - started;
+  const up = uptime.getUptime(site.id);
+  const st = stats.getStats(site.id);
+
+  const out = [];
+  out.push(`Site: ${site.name}  (id: ${site.id})`);
+  out.push(`URL:  ${url}`);
+  if (site.customDomain) out.push(`Custom domain: https://${site.customDomain}`);
+  out.push(`Type: ${site.type || 'unknown'}   Perch status: ${site.status}`);
+  out.push('');
+
+  if (err) {
+    const why = err.name === 'AbortError' ? 'timed out after 10s' : err.message;
+    out.push(`❌ Could NOT reach the site (${why}).`);
+    out.push(`   It may still be building (Perch status is "${site.status}"). Try get_deploy_logs to see what happened.`);
+  } else {
+    const ok = res.status < 400;
+    const locked = res.status === 401;
+    const titleMatch = body.match(/<title[^>]*>([^<]*)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : null;
+    out.push(`${ok || locked ? '✅' : '⚠️'} HTTP ${res.status}${res.statusText ? ' ' + res.statusText : ''}  (${ms} ms)`);
+    if (locked) out.push('   (401 = password-protected and responding — that still counts as live.)');
+    out.push(`   Served: ${res.headers.get('content-type') || '?'}, ${fmtBytes(Buffer.byteLength(body))}`);
+    if (title) out.push(`   Page title: "${title}"`);
+    const textOnly = body
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (textOnly) out.push(`   First words: ${textOnly.slice(0, 160)}${textOnly.length > 160 ? '…' : ''}`);
+  }
+
+  out.push('');
+  out.push(`Uptime (recent checks): ${up.pct == null ? 'n/a' : up.pct + '%'}${up.lastCheckedAt ? `, last checked ${fmtAge(up.lastCheckedAt)}` : ''}`);
+  out.push(`Visits: ${st.total} total · ${st.last24h} in 24h · ${st.last7d} in 7d · ~${st.visitors} unique`);
+  out.push(`Last deploy: ${fmtAge(site.lastDeployAt)}`);
+  return text(out.join('\n'));
+}
+
+function getSiteStats(userId, args) {
+  const site = resolveSite(userId, args);
+  if (!site) throw new Error('site not found — use list_sites to see ids and names');
+  const st = stats.getStats(site.id);
+  const up = uptime.getUptime(site.id);
+  return text([
+    `Stats for "${site.name}"  (${site.url})`,
+    `Total page views: ${st.total}`,
+    `Last 24h: ${st.last24h}    Last 7 days: ${st.last7d}`,
+    `Unique visitors (recent): ~${st.visitors}`,
+    `Uptime (recent checks): ${up.pct == null ? 'n/a' : up.pct + '%'}`,
+    '',
+    'Last 14 days:',
+    st.daily.map((d) => `  ${d.label}: ${d.count}`).join('\n'),
+  ].join('\n'));
+}
+
+function getDeployLogs(userId, args) {
+  const site = resolveSite(userId, args);
+  if (!site) throw new Error('site not found — use list_sites to see ids and names');
+  const d = site.lastDeployId ? logs.getDeploy(site.lastDeployId) : null;
+  if (!d) {
+    return text(`No build log is in memory for "${site.name}". Perch only keeps logs since its last restart — redeploy to get fresh logs. Current status: ${site.status}.`);
+  }
+  const lines = d.lines.map((l) => l.text).join('\n');
+  return text(`Build log for "${site.name}" — deploy status: ${d.status}\n\n${lines || '(no log lines recorded)'}`);
+}
+
+async function deleteSite(userId, id) {
+  id = String(id || '');
+  const s = store.getSite(id);
+  if (!s || s.userId !== userId) throw new Error('site not found (only the owner can delete a site)');
+  if (s.locked) throw new Error('this site is locked by the owner and can’t be deleted');
+  removeSiteCascade(s);
+  await caddy.writeAndReload();
+  return text(`Deleted "${s.name}" (${id}) — files, container, stats, and web address all removed. This can't be undone.`);
 }
 
 function text(t) { return { content: [{ type: 'text', text: t }] }; }
@@ -131,9 +310,15 @@ async function runTool(userId, name, args) {
   if (name === 'redeploy_site') {
     const s = store.getSite(String(args.id || ''));
     if (!s || s.userId !== userId) throw new Error('site not found');
+    const g = guards.checkDeploy(userId, { isNew: false });
+    if (!g.ok) throw new Error(g.error);
     deployer.deploy(s);
     return text(`Redeploying "${s.name}".`);
   }
+  if (name === 'check_site') return await checkSite(userId, args);
+  if (name === 'get_site_stats') return getSiteStats(userId, args);
+  if (name === 'get_deploy_logs') return getDeployLogs(userId, args);
+  if (name === 'delete_site') return await deleteSite(userId, args.id);
   throw new Error('unknown tool: ' + name);
 }
 

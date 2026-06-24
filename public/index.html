@@ -3,8 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>try{var t=localStorage.getItem('perch-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
   <title>Perch</title>
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <meta name="theme-color" content="#0b0b0d" />
 </head>
 <body>
   <main class="wrap">
@@ -16,8 +21,13 @@
         <div class="notif-panel" id="notifPanel" style="display:none"></div>
       </div>
       <a class="btn btn-ghost btn-sm" id="statusLink" target="_blank" rel="noopener">📡 Status page</a>
+      <a class="btn btn-ghost btn-sm" href="/docs.html">📖 Docs</a>
+      <button class="btn btn-ghost btn-sm" id="themeToggle" title="Toggle light/dark">🌙</button>
       <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
     </div>
+
+    <!-- First-run checklist (hidden once dismissed / all done) -->
+    <div class="onboard" id="onboard" style="display:none"></div>
     <header class="masthead">
       <div class="logo">🪺 Perch</div>
       <h1>Deploy anything</h1>
@@ -36,6 +46,9 @@
       </div>
       <input type="file" id="folderInput" class="hidden-file" webkitdirectory directory multiple />
     </div>
+
+    <!-- Start from a template (no upload needed) -->
+    <div class="templates" id="templates" style="display:none"></div>
 
     <!-- Secondary: add from a GitHub repo -->
     <form class="addform" id="addForm" style="margin-top:16px">
@@ -67,6 +80,14 @@
         <h2>Your sites</h2>
         <span class="subtitle" id="siteCount" style="font-size:13px"></span>
       </div>
+      <div class="site-controls" id="siteControls" style="display:none">
+        <input id="siteSearch" class="inline-input" placeholder="Search sites…" />
+        <select id="siteSort" class="inline-input">
+          <option value="recent">Recently deployed</option>
+          <option value="name">Name (A–Z)</option>
+          <option value="views">Most visited</option>
+        </select>
+      </div>
       <div class="sites" id="sites"></div>
     </section>
 
@@ -88,10 +109,21 @@
       <div class="panel" id="tokensPanel"></div>
     </section>
 
+    <!-- Public portfolio page (your handle) -->
+    <section class="section">
+      <div class="section-head">
+        <h2>Your public page</h2>
+        <span class="subtitle" style="font-size:13px">a portfolio of your live sites</span>
+      </div>
+      <div class="panel" id="profilePanel"></div>
+    </section>
+
     <!-- Owner Panel (admins only) -->
     <section class="section" id="ownerSection" style="display:none">
       <div class="section-head"><h2>👑 Owner Panel</h2><span class="subtitle" id="ownerStats" style="font-size:13px"></span></div>
-      <div class="panel" id="ownerServer"></div>
+      <div class="panel" id="ownerHealth"></div>
+      <div class="panel" id="ownerCharts" style="margin-top:14px"></div>
+      <div class="panel" id="ownerServer" style="margin-top:14px"></div>
       <div class="panel" id="ownerUsers" style="margin-top:14px"></div>
       <div class="panel" id="ownerExtra" style="margin-top:14px"></div>
     </section>

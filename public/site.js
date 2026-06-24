@@ -24,6 +24,9 @@ async function load() {
 
   renderHeader();
   renderUptime();
+  renderBadge();
+  renderDomain();
+  renderHistory();
   renderPreviews();
   renderPrivacy();
   renderShare();
@@ -101,6 +104,79 @@ function renderChart(daily) {
   }).join('');
 }
 
+// ── Deploy history (persisted) ───────────────────────────────────
+async function renderHistory() {
+  const el = $('historyPanel');
+  if (!el) return;
+  const data = await fetch(`/api/sites/${id}/history`).then((r) => (r.ok ? r.json() : { history: [] })).catch(() => ({ history: [] }));
+  const items = data.history || [];
+  if (!items.length) { el.innerHTML = `<div class="subtitle" style="font-size:13px">No deploys recorded yet.</div>`; return; }
+  el.innerHTML = items.map((h) => {
+    const ok = h.status === 'live';
+    const dur = h.ms != null ? ` · ${(h.ms / 1000).toFixed(1)}s` : '';
+    return `<div class="version-row"><span>${ok ? '🟢' : '🔴'} ${ok ? 'Deployed' : 'Failed'} <span class="subtitle" style="font-size:12px">${timeAgo(h.at)}${dur}</span></span><span class="subtitle" style="font-size:12px">${new Date(h.at).toLocaleString()}</span></div>`;
+  }).join('');
+}
+
+// ── Status badge (embeddable) ────────────────────────────────────
+function renderBadge() {
+  const el = $('badgePanel');
+  if (!el) return;
+  const url = `${location.origin}/badge/${id}.svg`;
+  const md = `[![Perch status](${url})](${SITE.url})`;
+  el.innerHTML = `<div class="row-between" style="gap:14px;flex-wrap:wrap">
+      <img src="${url}?t=${Date.now()}" alt="status badge" style="height:20px">
+      <span class="subtitle" style="font-size:12.5px">A live status badge — paste it in a README or webpage.</span>
+    </div>
+    <div class="inline-form" style="margin-top:12px">
+      <input class="inline-input" id="badgeMd" readonly value="${md.replace(/"/g, '&quot;')}" style="flex:1" />
+      <button class="btn btn-ghost" id="copyBadge">Copy</button>
+    </div>`;
+  $('copyBadge').addEventListener('click', () => {
+    const inp = $('badgeMd'); inp.select();
+    const done = () => { $('copyBadge').textContent = 'Copied!'; setTimeout(() => { $('copyBadge').textContent = 'Copy'; }, 1200); };
+    if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(done).catch(() => { document.execCommand('copy'); done(); });
+    else { document.execCommand('copy'); done(); }
+  });
+}
+
+// ── Custom domain wizard ─────────────────────────────────────────
+function renderDomain() {
+  const el = $('domainPanel');
+  if (!el) return;
+  if (!SITE.isOwner) { el.innerHTML = `<span class="subtitle" style="font-size:13px">Only the owner can connect a custom domain.</span>`; return; }
+  if (SITE.customDomain) {
+    el.innerHTML = `<div class="row-between" style="flex-wrap:wrap;gap:10px">
+        <div>🌐 <b><a class="domain" href="https://${SITE.customDomain}" target="_blank" rel="noopener">${SITE.customDomain} ↗</a></b></div>
+        <div class="adm-actions"><button class="btn btn-ghost btn-sm" id="checkDns">Check DNS</button><button class="btn btn-ghost btn-sm" id="removeDomain">Remove</button></div>
+      </div>
+      <div id="dnsHelp" class="subtitle" style="font-size:12.5px;margin-top:10px">Point your domain's <b>A record</b> at this server, then click “Check DNS”.</div>`;
+    $('checkDns').addEventListener('click', checkDns);
+    $('removeDomain').addEventListener('click', async () => { if (!confirm('Disconnect this domain?')) return; await fetch(`/api/sites/${id}/domain`, { method: 'DELETE' }); load(); });
+  } else {
+    el.innerHTML = `<div class="inline-form">
+        <input id="domainInput" class="inline-input" placeholder="yourdomain.com" />
+        <button class="btn btn-primary" id="connectDomain">Connect</button>
+      </div>
+      <div id="domainMsg" class="subtitle" style="font-size:12.5px;margin-top:8px">Already own a domain? Connect it here, or <a class="namelink" href="/#domainsSection">buy one</a>.</div>`;
+    $('connectDomain').addEventListener('click', async () => {
+      const domain = $('domainInput').value.trim();
+      if (!domain) return;
+      const r = await fetch(`/api/sites/${id}/domain`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) load(); else $('domainMsg').textContent = d.error || 'Could not connect';
+    });
+  }
+}
+async function checkDns() {
+  const help = $('dnsHelp');
+  help.textContent = 'Checking…';
+  const d = await fetch(`/api/sites/${id}/domain/check`).then((r) => r.json()).catch(() => null);
+  if (!d) { help.textContent = 'Check failed.'; return; }
+  if (d.pointed) help.innerHTML = `✅ <b>Pointed correctly!</b> HTTPS turns on automatically within a minute or two.`;
+  else help.innerHTML = `⏳ Not pointed yet. Add an <b>A record</b>: <code>@ → ${d.serverIp || 'your server IP'}</code>. DNS can take a while.${d.ips && d.ips.length ? ` Currently resolves to ${d.ips.join(', ')}.` : ' Not resolving yet.'}`;
+}
+
 // ── Privacy (password protect) ───────────────────────────────────
 function renderPrivacy() {
   const el = $('privacyPanel');
@@ -176,8 +252,8 @@ async function renderShare() {
   // Collaborators (non-owners) can manage but not share/delete.
   if (!SITE.isOwner) {
     document.querySelector('#shareSection h2').textContent = 'Shared';
-    el.innerHTML = `<span class="subtitle" style="font-size:13px">👥 This site was shared with you. You can manage it, but only the owner can delete it or change who it's shared with.</span>`;
-    const del = $('deleteBtn'); if (del) del.style.display = 'none';
+    el.innerHTML = `<span class="subtitle" style="font-size:13px">👥 This site was shared with you. You can manage it, but only the owner can delete, rename, clone, or change who it's shared with.</span>`;
+    ['deleteBtn', 'renameBtn', 'cloneBtn'].forEach((bid) => { const b = $(bid); if (b) b.style.display = 'none'; });
     return;
   }
   const data = await fetch(`/api/sites/${id}/collaborators`).then((r) => (r.ok ? r.json() : { collaborators: [] }));
@@ -255,6 +331,23 @@ $('deleteBtn').addEventListener('click', async () => {
   const r = await fetch(`/api/sites/${id}`, { method: 'DELETE' });
   if (r.ok) location.href = '/';
   else { alert('Could not delete'); $('deleteBtn').disabled = false; $('deleteBtn').textContent = 'Delete site'; }
+});
+
+$('renameBtn').addEventListener('click', async () => {
+  const name = prompt('New name for this site (the web address stays the same):', SITE.name);
+  if (!name || !name.trim()) return;
+  const r = await fetch(`/api/sites/${id}/rename`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
+  if (r.ok) load(); else { const d = await r.json().catch(() => ({})); alert(d.error || 'Rename failed'); }
+});
+
+$('cloneBtn').addEventListener('click', async () => {
+  const name = prompt('Name for the copy:', `${SITE.name} copy`);
+  if (!name || !name.trim()) return;
+  $('cloneBtn').disabled = true; $('cloneBtn').textContent = 'Cloning…';
+  const r = await fetch(`/api/sites/${id}/clone`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok && d.deployId) location.href = `/deploy.html?id=${d.deployId}`;
+  else { alert(d.error || 'Clone failed'); $('cloneBtn').disabled = false; $('cloneBtn').textContent = 'Clone'; }
 });
 
 // Live refresh of status + uptime + stats, WITHOUT clobbering the editable panels.

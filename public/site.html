@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>try{var t=localStorage.getItem('perch-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
   <title>Site · Perch</title>
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
   <main class="wrap">
@@ -45,6 +47,12 @@
       </div>
     </section>
 
+    <!-- Deploy history -->
+    <section class="section">
+      <div class="section-head"><h2>Deploy history</h2></div>
+      <div class="panel" id="historyPanel"></div>
+    </section>
+
     <!-- Preview deploys -->
     <section class="section">
       <div class="section-head"><h2>Preview deploys</h2></div>
@@ -61,6 +69,18 @@
           <div class="subtitle" style="font-size:13px">Point your phone camera at it to open the site.</div>
         </div>
       </div>
+    </section>
+
+    <!-- Custom domain wizard -->
+    <section class="section">
+      <div class="section-head"><h2>Custom domain</h2></div>
+      <div class="panel" id="domainPanel"></div>
+    </section>
+
+    <!-- Status badge (embeddable) -->
+    <section class="section">
+      <div class="section-head"><h2>Status badge</h2></div>
+      <div class="panel" id="badgePanel"></div>
     </section>
 
     <!-- Privacy (password protect) -->
@@ -98,6 +118,8 @@
         <div class="manage-actions">
           <a class="btn btn-primary" id="openBtn" target="_blank" rel="noopener">Open site ↗</a>
           <button class="btn btn-ghost" id="redeployBtn">Redeploy</button>
+          <button class="btn btn-ghost" id="renameBtn">Rename</button>
+          <button class="btn btn-ghost" id="cloneBtn">Clone</button>
           <a class="btn btn-ghost" id="logsBtn">View last logs</a>
           <a class="btn btn-ghost" href="/#domainsSection">Connect a domain</a>
           <button class="btn btn-danger" id="deleteBtn">Delete site</button>

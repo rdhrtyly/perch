@@ -50,13 +50,15 @@ function card(site) {
   const badge = site.source === 'upload' ? `<span class="badge">uploaded</span>`
     : (site.repo ? `<span class="badge">github</span>` : '');
   const sharedBadge = site.sharedWithMe ? `<span class="badge">shared with you</span>` : '';
+  const pinBtn = site.isOwner
+    ? `<button class="pin-btn ${site.pinned ? 'pinned' : ''}" data-pin="${site.id}" data-pinned="${site.pinned ? '1' : '0'}" title="${site.pinned ? 'Unpin' : 'Pin to top'}">${site.pinned ? '📌' : '📍'}</button>` : '';
   const primary = site.customDomain || site.domain;
   const sub = site.repo ? site.repo : 'uploaded files';
   const extra = site.customDomain ? ` · also ${site.domain}` : '';
   return `
-    <div class="card">
+    <div class="card${site.pinned ? ' is-pinned' : ''}">
       <div class="info">
-        <p class="name"><a class="namelink" href="/site.html?id=${site.id}">${site.name}</a> ${badge} ${sharedBadge}</p>
+        <p class="name">${pinBtn}<a class="namelink" href="/site.html?id=${site.id}">${site.name}</a> ${badge} ${sharedBadge}</p>
         <a class="domain" href="https://${primary}" target="_blank" rel="noopener">${primary}</a>
         <div class="meta">${sub} · deployed ${timeAgo(site.lastDeployAt)}${extra}</div>
       </div>
@@ -72,20 +74,66 @@ async function loadSites() {
   const resp = await fetch('/api/sites');
   if (resp.status === 401) { location.href = '/login.html'; return; }
   SITES = await resp.json();
+  renderSites();
+}
+
+// Apply search + sort (pinned always first), then draw the cards.
+function renderSites() {
   const sc = document.getElementById('siteCount');
-  // Owners just see a plain count (no badge) so nothing stands out.
   if (sc) sc.textContent = UNLIMITED ? `${SITES.length} sites` : `${SITES.length} / ${LIMIT} sites`;
-  sitesEl.innerHTML = SITES.length
-    ? SITES.map(card).join('')
-    : `<div class="empty">No sites yet — drag a folder up top to deploy your first one. 🚀</div>`;
-  sitesEl.querySelectorAll('[data-deploy]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      btn.disabled = true; btn.textContent = 'Starting…';
-      const r = await fetch(`/api/sites/${btn.dataset.deploy}/deploy`, { method: 'POST' });
-      const d = await r.json();
-      if (d.deployId) location.href = `/deploy.html?id=${d.deployId}`;
-    });
-  });
+  const controls = document.getElementById('siteControls');
+  if (controls) controls.style.display = SITES.length > 3 ? 'flex' : 'none';
+
+  const searchEl = document.getElementById('siteSearch');
+  const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+  const sort = (document.getElementById('siteSort') || {}).value || 'recent';
+  const cmp = {
+    name: (a, b) => a.name.localeCompare(b.name),
+    views: (a, b) => (b.views || 0) - (a.views || 0),
+    recent: (a, b) => (b.lastDeployAt || 0) - (a.lastDeployAt || 0),
+  }[sort] || (() => 0);
+  const list = SITES
+    .filter((s) => !q || s.name.toLowerCase().includes(q) || (s.domain || '').toLowerCase().includes(q))
+    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || cmp(a, b));
+
+  sitesEl.innerHTML = list.length
+    ? list.map(card).join('')
+    : (SITES.length ? `<div class="empty">No sites match that search.</div>`
+      : `<div class="empty">No sites yet — drag a folder up top to deploy your first one. 🚀</div>`);
+
+  sitesEl.querySelectorAll('[data-deploy]').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Starting…';
+    const r = await fetch(`/api/sites/${btn.dataset.deploy}/deploy`, { method: 'POST' });
+    const d = await r.json();
+    if (d.deployId) location.href = `/deploy.html?id=${d.deployId}`;
+    else { alert(d.error || 'Could not deploy'); btn.disabled = false; btn.textContent = 'Redeploy'; }
+  }));
+  sitesEl.querySelectorAll('[data-pin]').forEach((btn) => btn.addEventListener('click', async () => {
+    const pinned = btn.dataset.pinned !== '1';
+    await fetch(`/api/sites/${btn.dataset.pin}/pin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pinned }) });
+    const s = SITES.find((x) => x.id === btn.dataset.pin); if (s) s.pinned = pinned;
+    renderSites();
+  }));
+  renderOnboard();
+}
+
+// ── templates (deploy a starter with one click) ───────────────────
+async function loadTemplates() {
+  const el = document.getElementById('templates');
+  if (!el) return;
+  const data = await fetch('/api/templates').then((r) => (r.ok ? r.json() : { templates: [] })).catch(() => ({ templates: [] }));
+  if (!data.templates || !data.templates.length) return;
+  el.style.display = 'flex';
+  el.innerHTML = `<span class="subtitle" style="font-size:13px">or start from a template:</span>`
+    + data.templates.map((t) => `<button class="btn btn-ghost btn-sm" data-tpl="${t.id}">${t.label}</button>`).join('');
+  el.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', async () => {
+    const name = prompt(`Name your new "${b.textContent}" site:`);
+    if (!name || !name.trim()) return;
+    const r = await fetch('/api/sites/template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), template: b.dataset.tpl }) });
+    const d = await r.json();
+    if (r.ok && d.deployId) location.href = `/deploy.html?id=${d.deployId}`;
+    else alert(d.error || 'Could not create from template');
+  }));
 }
 
 // ── upload (the Vercel-style flow) ────────────────────────────────
@@ -296,6 +344,8 @@ async function loadTokens() {
   const panel = document.getElementById('tokensPanel');
   if (!panel) return;
   const data = await fetch('/api/tokens').then((r) => (r.ok ? r.json() : { tokens: [] })).catch(() => ({ tokens: [] }));
+  TOKENS_COUNT = (data.tokens || []).length;
+  renderOnboard();
   const list = (data.tokens || []).length
     ? data.tokens.map((t) => `<div class="version-row"><span>🔑 ${t.name} <span class="subtitle" style="font-size:12px">· made ${timeAgo(t.createdAt)}</span></span><button class="btn btn-ghost btn-sm" data-revoke="${t.id}">Revoke</button></div>`).join('')
     : `<div class="subtitle" style="font-size:13px">No tokens yet.</div>`;
@@ -316,6 +366,73 @@ async function loadTokens() {
   }));
 }
 
+// ── theme (light / dark) ──────────────────────────────────────────
+function applyTheme(theme) {
+  if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+}
+function initTheme() {
+  let theme = 'dark';
+  try { theme = localStorage.getItem('perch-theme') || 'dark'; } catch (e) {}
+  applyTheme(theme);
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('perch-theme', next); } catch (e) {}
+    applyTheme(next);
+  });
+}
+
+// ── public page (handle) ──────────────────────────────────────────
+let HANDLE = null;
+function renderProfile() {
+  const el = document.getElementById('profilePanel');
+  if (!el) return;
+  if (HANDLE) {
+    const url = `${location.origin}/u/${HANDLE}`;
+    el.innerHTML = `<div class="row-between" style="flex-wrap:wrap;gap:10px">
+        <div>🌐 <b>@${HANDLE}</b> — <a class="domain" href="/u/${HANDLE}" target="_blank" rel="noopener">${url} ↗</a></div>
+        <div class="adm-actions"><button class="btn btn-ghost btn-sm" id="editHandle">Change</button><button class="btn btn-ghost btn-sm" id="clearHandle">Remove</button></div>
+      </div>
+      <div class="subtitle" style="font-size:12.5px;margin-top:10px">Shows your <b>live</b> sites as a shareable portfolio.</div>`;
+    document.getElementById('editHandle').addEventListener('click', () => { const v = prompt('Your handle (letters, numbers, dashes):', HANDLE || ''); if (v !== null) saveHandle(v); });
+    document.getElementById('clearHandle').addEventListener('click', () => saveHandle(''));
+  } else {
+    el.innerHTML = `<div class="inline-form">
+        <input id="handleInput" class="inline-input" placeholder="pick a handle, e.g. lucas" />
+        <button class="btn btn-primary" id="saveHandle">Claim page</button>
+      </div>
+      <div id="handleMsg" class="subtitle" style="font-size:12.5px;margin-top:8px">Your portfolio will live at <b>${location.host}/u/&lt;handle&gt;</b>.</div>`;
+    document.getElementById('saveHandle').addEventListener('click', () => saveHandle(document.getElementById('handleInput').value));
+  }
+}
+async function saveHandle(handle) {
+  const r = await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ handle: handle.trim() }) });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) { HANDLE = d.handle; renderProfile(); renderOnboard(); }
+  else { const m = document.getElementById('handleMsg'); if (m) m.textContent = d.error || 'Could not save'; else alert(d.error || 'Could not save'); }
+}
+
+// ── first-run checklist ───────────────────────────────────────────
+let TOKENS_COUNT = 0;
+function renderOnboard() {
+  const el = document.getElementById('onboard');
+  if (!el) return;
+  let dismissed = false; try { dismissed = localStorage.getItem('perch-onboard') === 'done'; } catch (e) {}
+  const steps = [
+    { done: SITES.length > 0, label: 'Deploy your first site', hint: 'Drag a folder up top, or pick a template.' },
+    { done: !!HANDLE, label: 'Claim your public page', hint: 'Set a handle to share a portfolio.' },
+    { done: TOKENS_COUNT > 0, label: 'Connect Claude', hint: 'Make a deploy token — see Docs.' },
+  ];
+  if (dismissed || steps.every((s) => s.done)) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<div class="onboard-head"><b>👋 Getting started</b><button class="btn btn-ghost btn-sm" id="onboardDismiss">Dismiss</button></div>`
+    + steps.map((s) => `<div class="onboard-step ${s.done ? 'done' : ''}">${s.done ? '✅' : '⬜'} <b>${s.label}</b> <span class="subtitle" style="font-size:12.5px">— ${s.hint}</span></div>`).join('');
+  document.getElementById('onboardDismiss').addEventListener('click', () => { try { localStorage.setItem('perch-onboard', 'done'); } catch (e) {} el.style.display = 'none'; });
+}
+
 // ── auth + boot ───────────────────────────────────────────────────
 logoutBtn.addEventListener('click', async () => {
   await fetch('/api/auth/logout', { method: 'POST' });
@@ -330,8 +447,11 @@ async function boot() {
   userEmail.textContent = user.email;
   LIMIT = user.maxSites || 10;
   UNLIMITED = !!user.unlimited;
+  HANDLE = user.handle || null;
   document.getElementById('statusLink').href = '/status.html?u=' + user.id;
   userbar.style.display = 'flex';
+  initTheme();
+  renderProfile();
 
   // Announcement banner
   if (user.announcement) { const a = document.getElementById('announce'); a.textContent = '📢 ' + user.announcement; a.style.display = 'block'; }
@@ -339,9 +459,21 @@ async function boot() {
   if (user.admin && window.initOwnerPanel) { document.getElementById('ownerSection').style.display = ''; window.initOwnerPanel(); }
 
   loadSites();
+  loadTemplates();
   loadNotifications();
   loadTokens();
   initDomains();
+
+  const search = document.getElementById('siteSearch');
+  const sort = document.getElementById('siteSort');
+  if (search) search.addEventListener('input', renderSites);
+  if (sort) sort.addEventListener('change', renderSites);
+
   setInterval(() => { loadSites(); loadNotifications(); }, 5000);
 }
 boot();
+
+// Make Perch installable + load the shell offline.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}

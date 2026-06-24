@@ -33,6 +33,27 @@
   --font-display: "Playfair Display", Georgia, serif;
 }
 
+/* Light theme (toggled via [data-theme="light"] on <html>) */
+:root[data-theme="light"] {
+  --bg: #f7f5f0;
+  --bg-soft: #efece4;
+  --surface: #ffffff;
+  --surface-2: #f2efe8;
+  --line: rgba(184, 146, 58, 0.30);
+  --line-soft: rgba(0, 0, 0, 0.08);
+  --text: #1c1a16;
+  --muted: #6b6458;
+  --faint: #9a9282;
+  --gold: #b8923a;
+  --gold-bright: #9c7a2c;
+  --gold-deep: #8a6c26;
+  --gold-grad: linear-gradient(135deg, #d8b45a 0%, #b8923a 55%, #95731f 100%);
+  --gold-soft: rgba(184, 146, 58, 0.14);
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 16px 40px rgba(0,0,0,.10);
+  --shadow-hover: 0 2px 6px rgba(0,0,0,.08), 0 26px 60px rgba(0,0,0,.14);
+  --glow-gold: 0 0 0 1px rgba(184,146,58,.30), 0 8px 26px rgba(184,146,58,.18);
+}
+
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 
@@ -268,6 +289,40 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color
 .adm-uinfo { min-width: 180px; }
 .adm-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .adm-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Owner: health meters, charts, broadcast box */
+.meter-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+.meter-label { min-width: 72px; font-size: 14px; }
+.meter { flex: 1; height: 9px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.meter-fill { display: block; height: 100%; border-radius: 999px; transition: width .3s ease; }
+.meter-detail { font-size: 12px; min-width: 110px; text-align: right; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.adm-bulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.adm-detail { padding: 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
+.bulk-cb { margin-right: 8px; vertical-align: middle; accent-color: var(--gold); }
+
+/* Templates row, search/sort, pin */
+.templates { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.site-controls { display: flex; gap: 10px; margin: 4px 0 16px; flex-wrap: wrap; }
+.site-controls .inline-input { flex: 1; min-width: 160px; }
+.pin-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 5px 0 0; opacity: .45; line-height: 1; }
+.pin-btn:hover, .pin-btn.pinned { opacity: 1; }
+.card.is-pinned { box-shadow: var(--glow-gold); }
+
+/* Onboarding checklist */
+.onboard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px 18px; margin-bottom: 22px; box-shadow: var(--shadow); }
+.onboard-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.onboard-step { padding: 6px 0; font-size: 14px; }
+.onboard-step.done { opacity: .6; }
+
+/* Portfolio cards (public page) */
+.portfolio-card { text-decoration: none; transition: transform .15s ease, box-shadow .15s ease; }
+.portfolio-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+
+/* Code blocks (docs) */
+.code-block { background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 14px 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: var(--text); overflow-x: auto; white-space: pre; margin: 0; }
+.adm-textarea { width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; font-size: 14px; resize: vertical; }
+.adm-textarea:focus { outline: none; border-color: var(--gold-deep); }
 
 /* Notification bell */
 .bell-wrap { position: relative; }

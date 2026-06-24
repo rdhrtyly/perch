@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>try{var t=localStorage.getItem('perch-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  <title>Connector &amp; API · Perch</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead" style="text-align:left">
+      <a class="back" href="/">← Dashboard</a>
+      <h1 style="font-size:40px;margin-top:14px">Connector &amp; API</h1>
+      <p class="subtitle">Deploy to your Perch from Claude or your own scripts.</p>
+    </header>
+
+    <section class="section">
+      <div class="section-head"><h2>1. Make a deploy token</h2></div>
+      <div class="panel">
+        <p class="subtitle" style="font-size:14px;margin-top:0">On the dashboard, open <b>Deploy tokens → Create token</b>. Copy it once — it's your key, treat it like a password.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>2. Connect in Claude Code (CLI)</h2></div>
+      <div class="panel">
+        <p class="subtitle" style="font-size:14px;margin-top:0">Add Perch as an MCP server with your token:</p>
+        <pre class="code-block">claude mcp add --transport http perch \
+  https://useperch.dev/mcp \
+  --header "Authorization: Bearer perch_YOUR_TOKEN"</pre>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>3. Connect in Claude Desktop / Web</h2></div>
+      <div class="panel">
+        <p class="subtitle" style="font-size:14px;margin-top:0">Settings → Connectors → <b>Add custom connector</b> → URL:</p>
+        <pre class="code-block">https://useperch.dev/connect</pre>
+        <p class="subtitle" style="font-size:13px">No token needed — it opens a Perch login page (log in with your email + password to authorize).</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>What Claude can do</h2></div>
+      <div class="panel">
+        <div class="adm-row"><b>list_sites</b><span class="subtitle" style="font-size:13px">see your sites + live URLs</span></div>
+        <div class="adm-row"><b>deploy_site</b><span class="subtitle" style="font-size:13px">deploy files (HTML or React/Next.js)</span></div>
+        <div class="adm-row"><b>deploy_from_github</b><span class="subtitle" style="font-size:13px">deploy a GitHub repo</span></div>
+        <div class="adm-row"><b>redeploy_site</b><span class="subtitle" style="font-size:13px">rebuild a site</span></div>
+        <div class="adm-row"><b>check_site</b><span class="subtitle" style="font-size:13px">confirm a site is live + see its stats</span></div>
+        <div class="adm-row"><b>get_site_stats</b><span class="subtitle" style="font-size:13px">views + uptime</span></div>
+        <div class="adm-row"><b>get_deploy_logs</b><span class="subtitle" style="font-size:13px">the last build log</span></div>
+        <div class="adm-row"><b>delete_site</b><span class="subtitle" style="font-size:13px">tear a site down (owner only)</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Status badge</h2></div>
+      <div class="panel">
+        <p class="subtitle" style="font-size:14px;margin-top:0">Every site has a live status badge. Grab the markdown on the site's page, or use:</p>
+        <pre class="code-block">https://useperch.dev/badge/&lt;site-id&gt;.svg</pre>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

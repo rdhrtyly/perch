@@ -106,6 +106,18 @@ function effectiveLimit(user) {
   return Number.isFinite(d) ? d : config.maxSitesPerUser;
 }
 
+// How much storage a user gets, in MB (owners = unlimited; 0 = unlimited).
+function effectiveStorageMb(user) {
+  if (isAdmin(user)) return Infinity;
+  if (user) {
+    if (user.storageLimitMb === -1) return Infinity;             // owner gave them "unlimited"
+    if (Number.isFinite(user.storageLimitMb)) return user.storageLimitMb; // a custom cap
+  }
+  const d = settings.get().defaultStorageMb;
+  const base = Number.isFinite(d) ? d : config.maxStorageMbPerUser;
+  return base > 0 ? base : Infinity;
+}
+
 function requireAuth(req, res, next) {
   // Login cookie first, then a "Authorization: Bearer <token>" header (connector).
   let user = getUser(getUserId(req));
@@ -193,6 +205,7 @@ router.get('/me', (req, res) => {
     id: user.id, email: user.email,
     admin: isAdmin(user), unlimited: isAdmin(user),
     maxSites: Number.isFinite(lim) ? lim : null,
+    handle: user.handle || null,
     announcement: settings.get().announcement,
   });
 });
@@ -215,6 +228,6 @@ function checkLogin(email, password) {
 module.exports = {
   router, requireAuth, requireAdmin, getUserId,
   findUserByEmail, getUserById, checkLogin,
-  isAdmin, effectiveLimit,
+  isAdmin, effectiveLimit, effectiveStorageMb,
   listAllUsers, updateUser, deleteUserRecord, setUserPassword, getAdminIds,
 };

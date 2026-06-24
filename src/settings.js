@@ -10,6 +10,7 @@ const DEFAULTS = {
   maintenance: false,     // pause the whole site for non-owners
   announcement: '',       // banner message shown to everyone
   defaultLimit: null,     // override config.maxSitesPerUser (null = use .env)
+  defaultStorageMb: null, // override config.maxStorageMbPerUser (null = use .env)
   bannedEmails: [],       // emails blocked from signing up
 };
 

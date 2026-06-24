@@ -9,6 +9,8 @@ const config = require('../config');
 const store = require('../store');
 const logs = require('../logs/stream');
 const notify = require('../notify');
+const activity = require('../activity');
+const history = require('../history');
 const { run, buildStatic, buildAndRunNext } = require('./docker');
 const { detect } = require('./detect');
 const caddy = require('./caddy');
@@ -22,6 +24,7 @@ function nextPort() {
 }
 
 async function deploy(site) {
+  const startedAt = Date.now();
   const deployId = logs.startDeploy(site.id);
   store.updateSite(site.id, {
     status: 'building',
@@ -70,11 +73,14 @@ async function deploy(site) {
     await caddy.writeAndReload();
 
     logs.log(deployId, `Done! Live at ${site.url}`);
+    activity.log('deploy', `deployed "${site.name}"`);
+    history.record(site.id, { status: 'live', ms: Date.now() - startedAt });
     logs.finish(deployId, 'live');
   } catch (err) {
     logs.log(deployId, `Deploy FAILED: ${err.message}`);
     store.updateSite(site.id, { status: 'failed' });
     notify.add(site.userId, { type: 'deploy-failed', message: `"${site.name}" failed to deploy`, siteId: site.id });
+    history.record(site.id, { status: 'failed', ms: Date.now() - startedAt, error: err.message });
     logs.finish(deployId, 'failed');
   }
 }

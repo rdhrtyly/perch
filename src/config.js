@@ -28,6 +28,14 @@ const config = {
   // Most sites a single account can have (stops one person filling the server).
   maxSitesPerUser: Number(process.env.MAX_SITES_PER_USER) || 10,
 
+  // Pause all deploys when the disk is at/above this % full.
+  diskGuardPct: Number(process.env.DISK_GUARD_PCT) || 95,
+  // Storage each account may use, in MB (0 = unlimited). Owners are exempt.
+  maxStorageMbPerUser: Number(process.env.MAX_STORAGE_MB) || 0,
+  // Deploy rate limit: at most N deploys per window (ms) per user.
+  deployRateMax: Number(process.env.DEPLOY_RATE_MAX) || 30,
+  deployRateWindowMs: Number(process.env.DEPLOY_RATE_WINDOW_MS) || 600000,
+
   // Owner accounts (by email) — these skip the site limit (unlimited).
   adminEmails: (process.env.ADMIN_EMAILS || '')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
