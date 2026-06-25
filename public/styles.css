@@ -341,3 +341,91 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .feature-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   v3 — Motion & polish. Tasteful, premium, all additive.
+   (Honors prefers-reduced-motion at the very bottom.)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Ambient gold light, slowly drifting behind everything. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -15%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 38% at 18% 20%, rgba(216,180,90,.10), transparent 70%),
+    radial-gradient(34% 34% at 84% 14%, rgba(241,212,136,.07), transparent 70%),
+    radial-gradient(46% 46% at 72% 90%, rgba(184,146,58,.06), transparent 72%);
+  animation: ambient 28s ease-in-out infinite alternate;
+}
+@keyframes ambient {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-2%, 2%, 0) scale(1.05); }
+  100% { transform: translate3d(2%, -1.5%, 0) scale(1.02); }
+}
+
+/* The whole page glides in once on load. Cards ride along, so the
+   5-second card refresh never re-triggers an animation (no flicker). */
+.wrap { animation: page-in .7s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Title — a slow shimmer drifts across the gold lettering. */
+h1 {
+  background: linear-gradient(100deg, #fbf6e8 0%, #d8b45a 38%, #f3d489 50%, #d8b45a 62%, #fbf6e8 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: title-shimmer 6.5s ease-in-out infinite alternate;
+}
+@keyframes title-shimmer {
+  from { background-position: 0% center; }
+  to   { background-position: 100% center; }
+}
+
+/* Logo pill — a soft breathing glow. */
+.logo { animation: logo-breathe 4.5s ease-in-out infinite; }
+@keyframes logo-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(216,180,90,0); }
+  50%      { box-shadow: 0 0 20px -4px rgba(216,180,90,.5); }
+}
+
+/* Cards — add a gold glow to the existing hover lift. */
+.card:hover { box-shadow: var(--shadow-hover), 0 0 24px -6px rgba(216,180,90,.30); }
+
+/* Primary buttons — a light sheen sweeps across on hover. */
+.btn-primary { position: relative; overflow: hidden; }
+.btn-primary::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255,255,255,.45) 50%, transparent 75%);
+  transform: translateX(-130%);
+  transition: transform .6s ease;
+  pointer-events: none;
+}
+.btn-primary:hover::after { transform: translateX(130%); }
+
+/* Live status dot — a gentle pulsing halo. */
+.pill.live .dot { animation: dot-ping 2.4s ease-in-out infinite; }
+@keyframes dot-ping {
+  0%, 100% { box-shadow: 0 0 8px rgba(86,217,138,.9); }
+  50%      { box-shadow: 0 0 10px rgba(86,217,138,1), 0 0 0 5px rgba(86,217,138,.10); }
+}
+
+/* Upload icon — a slow, inviting float. */
+.dropzone .icon { animation: float-y 3.4s ease-in-out infinite; }
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+/* Accessibility: respect people who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
+  .wrap { opacity: 1 !important; transform: none !important; }
+}
