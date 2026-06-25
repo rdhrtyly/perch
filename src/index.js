@@ -75,6 +75,13 @@ app.get('/_perch/hit', (req, res) => {
   res.end(PIXEL);
 });
 
+// ── Health check (public) ────────────────────────────────────────
+// A plain 200 for uptime monitors (UptimeRobot, Cloudflare) and any load
+// balancer out front. Reveals nothing sensitive.
+app.get('/_perch/health', (req, res) => {
+  res.json({ ok: true, uptime: Math.round(process.uptime()), ts: Date.now() });
+});
+
 // ── The Claude connector (MCP) + OAuth login ─────────────────────
 // Browser-based Claude clients call these cross-origin, so allow CORS.
 function cors(req, res, next) {

@@ -15,14 +15,6 @@ const { run, buildStatic, buildAndRunNext } = require('./docker');
 const { detect } = require('./detect');
 const caddy = require('./caddy');
 
-// Pick the next free port for Next.js apps (they each need their own).
-function nextPort() {
-  const used = store.listSites().map((s) => s.port).filter(Boolean);
-  let p = 4001;
-  while (used.includes(p)) p++;
-  return p;
-}
-
 async function deploy(site) {
   const startedAt = Date.now();
   const deployId = logs.startDeploy(site.id);
@@ -54,10 +46,10 @@ async function deploy(site) {
 
     // 3) Build + publish based on the type.
     if (plan.type === 'nextjs') {
-      let fresh = store.getSite(site.id);
-      if (!fresh.port) fresh = store.updateSite(site.id, { port: nextPort() });
-      logs.log(deployId, `Building Next.js app (will run on port ${fresh.port})...`);
-      await buildAndRunNext(deployId, repoDir, fresh);
+      // buildAndRunNext picks its own port, health-checks the new version,
+      // and only switches traffic over once it's proven healthy.
+      logs.log(deployId, 'Building Next.js app...');
+      await buildAndRunNext(deployId, repoDir, store.getSite(site.id));
     } else if (plan.type === 'static-build') {
       logs.log(deployId, 'Building in Docker...');
       const builtDir = await buildStatic(deployId, repoDir, plan, store.getSite(site.id).env);

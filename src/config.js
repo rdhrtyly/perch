@@ -36,6 +36,15 @@ const config = {
   deployRateMax: Number(process.env.DEPLOY_RATE_MAX) || 30,
   deployRateWindowMs: Number(process.env.DEPLOY_RATE_WINDOW_MS) || 600000,
 
+  // Build resource cap (MB). A build container may use at most this much
+  // RAM, so one heavy build can't OOM-kill the whole server — at worst that
+  // single build fails. Pair with a swap file (see scripts/harden.sh).
+  buildMemoryMb: Number(process.env.BUILD_MEMORY_MB) || 1536,
+
+  // How long (ms) a new Next.js version has to answer its health check
+  // before Perch gives up and keeps the previous version live.
+  healthTimeoutMs: Number(process.env.HEALTH_TIMEOUT_MS) || 45000,
+
   // Owner accounts (by email) — these skip the site limit (unlimited).
   adminEmails: (process.env.ADMIN_EMAILS || '')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
