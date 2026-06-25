@@ -6,4 +6,7 @@ node_modules/
 data/*
 !data/.gitkeep
 
+# Full backups made by scripts/backup.sh
+backups-full/
+
 *.log

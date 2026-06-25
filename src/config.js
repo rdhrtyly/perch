@@ -45,6 +45,9 @@ const config = {
   // before Perch gives up and keeps the previous version live.
   healthTimeoutMs: Number(process.env.HEALTH_TIMEOUT_MS) || 45000,
 
+  // How many automatic daily record-backups to keep in data/backups/.
+  backupKeep: Number(process.env.BACKUP_KEEP) || 14,
+
   // Owner accounts (by email) — these skip the site limit (unlimited).
   adminEmails: (process.env.ADMIN_EMAILS || '')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),

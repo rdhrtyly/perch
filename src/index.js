@@ -18,6 +18,7 @@ const mcp = require('./mcp');
 const settings = require('./settings');
 const activity = require('./activity');
 const history = require('./history');
+const backup = require('./backup');
 const auth = require('./auth');
 const { verifySignature, parsePush } = require('./webhook');
 const api = require('./routes/api');
@@ -317,6 +318,9 @@ activity.startAutoFlush();
 // Load persisted deploy history (survives restarts).
 history.load();
 history.startAutoFlush();
+
+// Start automatic daily safety backups of the important records.
+backup.start();
 
 // Write an initial Caddyfile (at least routes the dashboard). Caddy
 // picks it up when it starts; harmless if Caddy isn't running yet.
